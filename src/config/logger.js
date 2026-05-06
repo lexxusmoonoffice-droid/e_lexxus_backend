@@ -29,7 +29,10 @@ const prodFormat = combine(timestamp(), errors({ stack: true }), json());
 
 const transports = [new winston.transports.Console({ handleExceptions: true, silent: env.isTest })];
 
-if (!env.isTest) {
+// File logging only in dev. Production platforms (Render, Railway,
+// Heroku) capture stdout natively, and writing to disk in a read-only
+// container filesystem fails (EACCES on /app/logs/).
+if (!env.isTest && !env.isProd) {
   transports.push(
     new DailyRotateFile({
       filename: path.join(__dirname, '../../logs/lexxus-%DATE%.log'),
