@@ -1,0 +1,40 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# environment
+.env
+.env.local
+.env.*.local
+.env.production
+.env.staging
+
+# build / coverage
+dist/
+build/
+coverage/
+.nyc_output/
+
+# logs
+logs/
+*.log
+npm-debug.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# tests
+.jest-cache/
+
+# misc
+*.pid
+*.seed
+*.tgz
+.cache/
+tmp/

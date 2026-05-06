@@ -1,0 +1,15 @@
+node_modules
+coverage
+logs
+tests
+.env
+.env.*
+*.log
+.git
+.github
+.husky
+.nyc_output
+.vscode
+.idea
+Dockerfile
+.dockerignore

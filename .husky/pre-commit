@@ -1,0 +1,3 @@
+#!/usr/bin/env sh
+# Husky pre-commit hook — runs lint-staged on staged backend files only.
+cd backend && npx lint-staged

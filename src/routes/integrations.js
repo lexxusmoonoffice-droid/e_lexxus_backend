@@ -1,0 +1,219 @@
+/**
+ * Admin integration settings — runtime config that the services pick
+ * up from the Settings singleton via appConfig.service. Anything you
+ * save here takes effect on the next request (no backend restart).
+ *
+ *   GET    /api/admin/integrations               masked snapshot
+ *   PUT    /api/admin/integrations/b2            store creds / bucket / CDN
+ *   PUT    /api/admin/integrations/cloudflare    store CF account + token
+ *   PUT    /api/admin/integrations/smtp          store SMTP + mail from
+ *   PUT    /api/admin/integrations/zoho          store client id/secret/api base
+ *   PUT    /api/admin/integrations/limits        token TTL, download limit, rate limits
+ *   PUT    /api/admin/integrations/observability sentry dsn
+ *   POST   /api/admin/integrations/test/b2       round-trip upload to B2
+ *   POST   /api/admin/integrations/test/smtp     send a test email
+ *   POST   /api/admin/integrations/test/cloudflare  verify CF token
+ */
+
+const express = require('express');
+const { z } = require('zod');
+const { v4: uuidv4 } = require('uuid');
+const asyncHandler = require('../utils/asyncHandler');
+const AppError = require('../utils/AppError');
+const { requireAuth, requireAdmin } = require('../middleware/auth');
+const validate = require('../middleware/validate');
+const audit = require('../services/audit.service');
+const appConfig = require('../services/appConfig.service');
+const mailer = require('../services/mailer.service');
+const b2 = require('../services/b2');
+const { Settings } = require('../models');
+
+const router = express.Router();
+router.use(requireAuth, requireAdmin);
+
+/* ─── helpers ────────────────────────────────────────────────────── */
+
+async function saveIntegrations(section, patch) {
+  const doc = await Settings.findOne({}) || (await Settings.getSettings());
+  doc.integrations = doc.integrations || {};
+  doc.integrations[section] = { ...(doc.integrations[section] || {}), ...patch };
+  doc.markModified('integrations');
+  await doc.save();
+  await appConfig.reload();
+  return doc;
+}
+async function saveTop(field, patch) {
+  const doc = await Settings.findOne({}) || (await Settings.getSettings());
+  doc[field] = { ...(doc[field] || {}), ...patch };
+  doc.markModified(field);
+  await doc.save();
+  await appConfig.reload();
+  return doc;
+}
+
+/* ─── schemas ────────────────────────────────────────────────────── */
+
+const b2Schema = z.object({
+  keyId: z.string().optional(),
+  appKey: z.string().optional(),
+  bucketName: z.string().optional(),
+  region: z.string().optional(),
+  endpoint: z.string().url().optional().or(z.literal('')),
+  endpointHost: z.string().optional(),
+  cdnDomain: z.string().optional(),
+});
+const cloudflareSchema = z.object({
+  accountId: z.string().optional(),
+  apiToken: z.string().optional(),
+});
+const smtpSchema = z.object({
+  host: z.string().optional(),
+  port: z.coerce.number().int().min(1).max(65535).optional(),
+  secure: z.coerce.boolean().optional(),
+  user: z.string().optional(),
+  pass: z.string().optional(),
+  mailFrom: z.string().optional(),
+});
+const zohoSchema = z.object({
+  clientId: z.string().optional(),
+  clientSecret: z.string().optional(),
+  apiBase: z.string().url().optional().or(z.literal('')),
+  accountsHost: z.string().url().optional().or(z.literal('')),
+});
+const limitsSchema = z.object({
+  downloadTokenTtlDays: z.coerce.number().int().min(1).max(365).optional(),
+  downloadLimitPerOrder: z.coerce.number().int().min(1).max(100).optional(),
+  downloadRateLimitPerHour: z.coerce.number().int().min(1).max(10000).optional(),
+  globalRateLimitPer15Min: z.coerce.number().int().min(1).max(1_000_000).optional(),
+});
+const observabilitySchema = z.object({
+  sentryDsn: z.string().optional(),
+});
+const testEmailSchema = z.object({ to: z.string().email() });
+
+/* ─── handlers ───────────────────────────────────────────────────── */
+
+const getAll = asyncHandler(async (_req, res) => {
+  if (!appConfig.current()) await appConfig.reload();
+  res.json({ integrations: appConfig.snapshotForAdmin() });
+});
+
+// Blank strings clear the field; missing fields leave it alone. Secret
+// fields you omit are kept as-is, so the UI can safely send a payload
+// without echoing back credentials the user never retyped.
+function stripEmptyButSavableBlanks(payload, blankableFields = []) {
+  const out = {};
+  for (const [k, v] of Object.entries(payload)) {
+    if (v === undefined) continue;
+    if (v === '' && !blankableFields.includes(k)) continue;
+    out[k] = v === '' ? null : v;
+  }
+  return out;
+}
+
+const putB2 = asyncHandler(async (req, res) => {
+  const patch = stripEmptyButSavableBlanks(req.body, ['cdnDomain']);
+  await saveIntegrations('b2', patch);
+  b2._reset?.(); // force the S3 client to rebuild on next call
+  await audit.logAction(req, 'integrations.b2', 'Settings', null, { after: { keys: Object.keys(patch) } });
+  res.json({ integrations: appConfig.snapshotForAdmin() });
+});
+
+const putCloudflare = asyncHandler(async (req, res) => {
+  const patch = stripEmptyButSavableBlanks(req.body);
+  await saveIntegrations('cloudflare', patch);
+  await audit.logAction(req, 'integrations.cloudflare', 'Settings', null);
+  res.json({ integrations: appConfig.snapshotForAdmin() });
+});
+
+const putSmtp = asyncHandler(async (req, res) => {
+  const patch = stripEmptyButSavableBlanks(req.body);
+  await saveIntegrations('smtp', patch);
+  mailer._reset?.();
+  await audit.logAction(req, 'integrations.smtp', 'Settings', null);
+  res.json({ integrations: appConfig.snapshotForAdmin() });
+});
+
+const putZoho = asyncHandler(async (req, res) => {
+  const patch = stripEmptyButSavableBlanks(req.body);
+  await saveIntegrations('zoho', patch);
+  await audit.logAction(req, 'integrations.zoho', 'Settings', null);
+  res.json({ integrations: appConfig.snapshotForAdmin() });
+});
+
+const putLimits = asyncHandler(async (req, res) => {
+  const patch = {};
+  for (const k of Object.keys(req.body)) {
+    if (req.body[k] !== undefined && req.body[k] !== '') patch[k] = req.body[k];
+  }
+  await saveTop('limits', patch);
+  await audit.logAction(req, 'integrations.limits', 'Settings', null, { after: patch });
+  res.json({ integrations: appConfig.snapshotForAdmin() });
+});
+
+const putObservability = asyncHandler(async (req, res) => {
+  const patch = stripEmptyButSavableBlanks(req.body, ['sentryDsn']);
+  await saveTop('observability', patch);
+  await audit.logAction(req, 'integrations.observability', 'Settings', null);
+  res.json({ integrations: appConfig.snapshotForAdmin() });
+});
+
+/* ─── test endpoints ─────────────────────────────────────────────── */
+
+const testB2 = asyncHandler(async (_req, res) => {
+  const cfg = appConfig.get('b2') || {};
+  if (!cfg.keyId || !cfg.appKey) throw AppError.badRequest('B2 credentials missing', 'B2_MISSING');
+  const probeKey = `_probe/${uuidv4()}.txt`;
+  const body = Buffer.from(`probe ${new Date().toISOString()}`);
+  try {
+    await b2.putObject({ key: probeKey, body, contentType: 'text/plain' });
+    const head = await b2.headObject(probeKey);
+    await b2.deleteObject(probeKey).catch(() => {});
+    res.json({ ok: true, bucket: cfg.bucketName, region: cfg.region, sizeBytes: head.sizeBytes });
+  } catch (err) {
+    res.status(502).json({ ok: false, error: err.message });
+  }
+});
+
+const testSmtp = asyncHandler(async (req, res) => {
+  const { to } = req.body;
+  try {
+    const out = await mailer.sendMail({
+      to,
+      subject: 'Lexxus — SMTP test',
+      html: '<p>This is a test email from the Lexxus admin panel.</p>',
+    });
+    res.json({ ok: true, messageId: out.messageId });
+  } catch (err) {
+    res.status(502).json({ ok: false, error: err.message });
+  }
+});
+
+const testCloudflare = asyncHandler(async (_req, res) => {
+  const cfg = appConfig.get('cloudflare') || {};
+  if (!cfg.apiToken) throw AppError.badRequest('Cloudflare API token not set', 'CF_MISSING');
+  try {
+    const r = await fetch('https://api.cloudflare.com/client/v4/user/tokens/verify', {
+      headers: { Authorization: `Bearer ${cfg.apiToken}` },
+    });
+    const json = await r.json();
+    res.json({ ok: r.ok && json.success, status: json.result?.status, errors: json.errors });
+  } catch (err) {
+    res.status(502).json({ ok: false, error: err.message });
+  }
+});
+
+/* ─── wiring ─────────────────────────────────────────────────────── */
+
+router.get('/', getAll);
+router.put('/b2', validate(b2Schema), putB2);
+router.put('/cloudflare', validate(cloudflareSchema), putCloudflare);
+router.put('/smtp', validate(smtpSchema), putSmtp);
+router.put('/zoho', validate(zohoSchema), putZoho);
+router.put('/limits', validate(limitsSchema), putLimits);
+router.put('/observability', validate(observabilitySchema), putObservability);
+router.post('/test/b2', testB2);
+router.post('/test/smtp', validate(testEmailSchema), testSmtp);
+router.post('/test/cloudflare', testCloudflare);
+
+module.exports = router;
