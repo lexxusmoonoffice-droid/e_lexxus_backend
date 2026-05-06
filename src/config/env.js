@@ -37,8 +37,8 @@ const schema = z.object({
   /** Comma-separated DNS IPs for SRV lookup (mongodb+srv). Helps when system DNS returns querySrv ECONNREFUSED. */
   MONGODB_DNS_SERVERS: z.string().optional().default(''),
 
-  // Redis — optional in dev, required in prod
-  REDIS_URL: isProd ? z.string().min(1) : z.string().optional().default(''),
+  // Redis — optional everywhere; cache.service falls back to in-memory.
+  REDIS_URL: z.string().optional().default(''),
 
   // Backblaze B2 — optional until Phase 6 (file uploads)
   B2_KEY_ID: z.string().optional().default(''),
