@@ -39,6 +39,9 @@ const settingsSchema = new Schema(
         clientSecret: { type: String, select: false },
         refreshToken: { type: String, select: false },
         webhookSecret: { type: String, select: false },
+        signingKey: { type: String, select: false },  // Developer Space → Authentication Keys
+        apiKey: { type: String },                      // Frontend checkout widget key
+        accountId: { type: String },                   // Zoho Payments merchant account ID
         apiBase: { type: String },
         accountsHost: { type: String, default: 'https://accounts.zoho.in' },
         scope: { type: String },

@@ -21,10 +21,12 @@ const TOKEN_TTL_SECONDS = 60 * 50; // 50 min — Zoho default is 60 min
 
 function getStoredRefreshToken() { return appConfig.get('zoho.refreshToken') || null; }
 function getStoredWebhookSecret() { return appConfig.get('zoho.webhookSecret') || null; }
+function getStoredSigningKey() { return appConfig.get('zoho.signingKey') || process.env.ZOHO_SIGNING_KEY || null; }
 function getAccountsHost() { return appConfig.get('zoho.accountsHost') || 'https://accounts.zoho.in'; }
 function getClientId() { return appConfig.get('zoho.clientId') || null; }
 function getClientSecret() { return appConfig.get('zoho.clientSecret') || null; }
 function getApiBase() { return appConfig.get('zoho.apiBase') || 'https://payments.zoho.in/api/v1'; }
+function getAccountId() { return appConfig.get('zoho.accountId') || process.env.ZOHO_ACCOUNT_ID || null; }
 
 /* ────────── OAuth ────────── */
 
@@ -90,22 +92,53 @@ async function exchangeCodeForTokens({ code, redirectUri, host }) {
 /* ────────── Checkout sessions ────────── */
 
 /**
- * Create a hosted checkout session. Returns the data we need to send the
- * buyer to Zoho's pay page.
+ * Create a hosted payment session via the Zoho Payments India API.
+ * Correct endpoint: POST /api/v1/paymentsessions?account_id={id}
+ * Returns { sessionId, accessKey } — frontend widget uses these.
  */
 async function createCheckoutSession({ amount, currency = 'INR', description, referenceId, redirectUrl, cancelUrl, customer }) {
   const token = await getAccessToken();
-  const apiUrl = `${getApiBase()}/sessions`;
-  const body = {
-    amount: Math.round(amount * 100), // smallest unit (paise)
-    currency,
-    description,
-    reference_id: referenceId,
-    redirect_url: redirectUrl,
-    cancel_url: cancelUrl,
-    customer,
+  const accountId = getAccountId();
+  if (!accountId) throw new Error('Zoho account_id not configured (set ZOHO_ACCOUNT_ID in .env)');
+
+  const apiUrl = `${getApiBase()}/paymentsessions?account_id=${encodeURIComponent(accountId)}`;
+  // Zoho requires HTTPS for success/failure URLs — swap http→https.
+  // Localhost/non-routable hosts are rejected by Zoho; reroute to the canonical frontend.
+  const env = require('../config/env');
+  const canonicalBase = (env.FRONTEND_URL || '').replace(/^http:\/\//i, 'https://').replace(/\/$/, '');
+  const toHttps = (url) => {
+    if (!url) return url;
+    const httpsUrl = url.replace(/^http:\/\//i, 'https://');
+    if (/https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0)(:|\/|$)/i.test(httpsUrl)) {
+      // Replace localhost origin with the public frontend URL
+      return httpsUrl.replace(/https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?/i, canonicalBase);
+    }
+    return httpsUrl;
   };
-  logger.info('zoho.createCheckoutSession request', { url: apiUrl, body });
+
+  const pageDescription = description
+    ? description.replace(/[^\w\s.,\-#]/g, '').slice(0, 255).trim() || 'Lexxus purchase'
+    : 'Lexxus purchase';
+
+  const body = {
+    amount: Number(amount.toFixed(2)), // decimal rupees, e.g. 100.00
+    currency,
+    description: pageDescription, // top-level: required, max 500 chars
+    max_retry_count: 3,
+    configurations: {
+      hosted_page_parameters: {
+        description: pageDescription, // hosted page: also required
+        ...(customer?.name ? { name: customer.name } : {}),
+        ...(customer?.email ? { email: customer.email } : {}),
+        phone_country_code: 'IN',
+        success_url: toHttps(redirectUrl), // must be HTTPS
+        failure_url: toHttps(cancelUrl),   // must be HTTPS
+        ...(referenceId ? { udf1: referenceId } : {}),
+      },
+    },
+  };
+
+  logger.info('zoho.createCheckoutSession request', { url: apiUrl, amount, currency });
   const res = await fetch(apiUrl, {
     method: 'POST',
     headers: {
@@ -120,9 +153,12 @@ async function createCheckoutSession({ amount, currency = 'INR', description, re
     throw new Error(`Zoho session creation failed: ${res.status} ${text}`);
   }
   const json = JSON.parse(text);
+  // Response: { code: 0, message: "success", payments_session: { payments_session_id, access_key, ... } }
+  const session = json.payments_session || json;
   return {
-    sessionId: json.session_id || json.id,
-    paymentUrl: json.payment_url || json.url,
+    sessionId: session.payments_session_id || session.session_id || session.id,
+    accessKey: session.access_key || null,
+    paymentUrl: session.payment_url || null, // may be null for widget flow
     raw: json,
   };
 }
@@ -150,14 +186,16 @@ async function refundPayment({ paymentId, amount, reason }) {
 /* ────────── Webhook signature ────────── */
 
 /**
- * Verify a webhook payload's HMAC-SHA256 signature in constant time.
+ * Verify a Zoho webhook signature in constant time.
+ * Zoho signs payloads with the Signing Key (from Developer Space).
  * `rawBody` must be the exact bytes Zoho sent (Buffer or string).
- * Prefers the DB-stored webhook secret, falls back to env.
+ * Falls back to webhook secret if signing key not configured.
  */
 async function verifyWebhookSignature(rawBody, signature) {
-  const secret = getStoredWebhookSecret();
+  // Prefer Signing Key (from Developer Space > Authentication Keys)
+  const secret = getStoredSigningKey() || getStoredWebhookSecret();
   if (!secret) {
-    logger.warn('Zoho webhook secret not configured — rejecting webhook');
+    logger.warn('Zoho signing key not configured — rejecting webhook');
     return false;
   }
   if (!signature || typeof signature !== 'string') return false;

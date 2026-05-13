@@ -59,6 +59,9 @@ const schema = z.object({
   ZOHO_REFRESH_TOKEN: z.string().optional().default(''),
   ZOHO_WEBHOOK_SECRET: z.string().optional().default(''),
   ZOHO_API_BASE: z.string().default('https://payments.zoho.in/api/v1'),
+  ZOHO_ACCOUNT_ID: z.string().optional().default(''),
+  ZOHO_API_KEY: z.string().optional().default(''),
+  ZOHO_SIGNING_KEY: z.string().optional().default(''),
 
   // SMTP — optional until Phase 10
   SMTP_HOST: z.string().default('smtp.zoho.com'),
