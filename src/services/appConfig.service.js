@@ -155,6 +155,9 @@ function snapshotForAdmin() {
       clientSecretSet: !!c.zoho.clientSecret,
       refreshTokenSet: !!c.zoho.refreshToken,
       webhookSecretSet: !!c.zoho.webhookSecret,
+      signingKeySet: !!c.zoho.signingKey,
+      accountId: c.zoho.accountId || '',       // non-sensitive, safe to expose
+      apiKeySet: !!c.zoho.apiKey,
       apiBase: c.zoho.apiBase,
       accountsHost: c.zoho.accountsHost,
       connectedAt: c.zoho.connectedAt,
