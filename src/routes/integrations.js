@@ -203,9 +203,84 @@ const testCloudflare = asyncHandler(async (_req, res) => {
   }
 });
 
+/* ─── B2 storage stats ───────────────────────────────────────────── */
+
+/**
+ * GET /api/admin/integrations/storage/stats
+ * Lists all objects in the B2 bucket (paginated internally) and returns:
+ *   - totalFiles, totalBytes, folders breakdown, recentFiles, largestFiles
+ * Results are cached in-memory for 2 minutes to avoid hammering B2.
+ */
+let _statsCache = null;
+let _statsCacheAt = 0;
+const STATS_TTL_MS = 2 * 60 * 1000; // 2 minutes
+
+const getStorageStats = asyncHandler(async (_req, res) => {
+  const cfg = appConfig.get('b2') || {};
+  if (!cfg.keyId || !cfg.appKey) {
+    return res.status(503).json({ error: 'B2 credentials not configured' });
+  }
+
+  // Serve from cache if fresh
+  if (_statsCache && Date.now() - _statsCacheAt < STATS_TTL_MS) {
+    return res.json({ ..._statsCache, cached: true });
+  }
+
+  const folders = {};   // prefix → { files, bytes }
+  const allFiles = [];  // { key, size, lastModified }
+  let totalFiles = 0;
+  let totalBytes = 0;
+
+  try {
+    for await (const obj of b2.listAll('')) {
+      const key = obj.Key || '';
+      const size = obj.Size || 0;
+      const lastModified = obj.LastModified;
+
+      totalFiles += 1;
+      totalBytes += size;
+
+      // Group by top-level prefix (e.g. "products/", "uploads/", "bundle/")
+      const slash = key.indexOf('/');
+      const prefix = slash >= 0 ? key.slice(0, slash) : '(root)';
+      if (!folders[prefix]) folders[prefix] = { files: 0, bytes: 0 };
+      folders[prefix].files += 1;
+      folders[prefix].bytes += size;
+
+      allFiles.push({ key, size, lastModified });
+    }
+  } catch (err) {
+    return res.status(502).json({ error: `B2 list failed: ${err.message}` });
+  }
+
+  // Sort for recent + largest
+  const byDate = [...allFiles].sort((a, b) => new Date(b.lastModified) - new Date(a.lastModified));
+  const bySize = [...allFiles].sort((a, b) => b.size - a.size);
+
+  const result = {
+    bucket: cfg.bucketName,
+    region: cfg.region,
+    endpoint: cfg.endpoint,
+    totalFiles,
+    totalBytes,
+    folders: Object.entries(folders)
+      .map(([name, v]) => ({ name, ...v }))
+      .sort((a, b) => b.bytes - a.bytes),
+    recentFiles: byDate.slice(0, 15).map(({ key, size, lastModified }) => ({ key, size, lastModified })),
+    largestFiles: bySize.slice(0, 10).map(({ key, size, lastModified }) => ({ key, size, lastModified })),
+    fetchedAt: new Date().toISOString(),
+    cached: false,
+  };
+
+  _statsCache = result;
+  _statsCacheAt = Date.now();
+  res.json(result);
+});
+
 /* ─── wiring ─────────────────────────────────────────────────────── */
 
 router.get('/', getAll);
+router.get('/storage/stats', getStorageStats);
 router.put('/b2', validate(b2Schema), putB2);
 router.put('/cloudflare', validate(cloudflareSchema), putCloudflare);
 router.put('/smtp', validate(smtpSchema), putSmtp);
