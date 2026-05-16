@@ -11,8 +11,17 @@ const createOrderSchema = z.object({
     email: z.string().email().optional(),
     country: z.string().trim().min(2).max(2),
   }),
+  // Optional provider override — admin/testing only; defaults to appConfig
+  provider: z.enum(['zoho', 'stripe', 'razorpay']).optional(),
 });
 
 const orderIdParam = z.object({ id: objectId });
 
-module.exports = { createOrderSchema, orderIdParam };
+const verifyRazorpaySchema = z.object({
+  razorpayOrderId:   z.string().min(1),
+  razorpayPaymentId: z.string().min(1),
+  razorpaySignature: z.string().min(1),
+  orderId:           objectId,  // Lexxus Order._id
+});
+
+module.exports = { createOrderSchema, orderIdParam, verifyRazorpaySchema };

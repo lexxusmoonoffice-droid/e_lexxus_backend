@@ -1,10 +1,10 @@
 /**
- * Payment routes.
+ * Payment routes — multi-provider.
  *
- * NB: the `/webhook` route is registered with its own `express.raw()`
- * body parser **inside** this router because the global `express.json()`
- * in app.js consumes the body before we get a chance at the raw bytes.
- * The HMAC must verify against the original bytes Zoho sent.
+ * Webhook routes use express.raw() so the HMAC can be verified against
+ * the raw bytes. Each provider gets its own webhook path.
+ *
+ * Backward-compat: /webhook still routes to Zoho.
  */
 
 const express = require('express');
@@ -16,13 +16,16 @@ const v = require('../validators/payment.validator');
 
 const router = express.Router();
 
-// Webhook FIRST (raw body); skip auth + json parsing.
-router.post('/webhook', express.raw({ type: '*/*', limit: '1mb' }), ctrl.webhook);
+/* ── Webhooks (raw body — must come BEFORE any json middleware) ── */
+router.post('/webhook',           express.raw({ type: '*/*', limit: '1mb' }), ctrl.webhookZoho);
+router.post('/webhook/zoho',      express.raw({ type: '*/*', limit: '1mb' }), ctrl.webhookZoho);
+router.post('/webhook/stripe',    express.raw({ type: '*/*', limit: '1mb' }), ctrl.webhookStripe);
+router.post('/webhook/razorpay',  express.raw({ type: '*/*', limit: '1mb' }), ctrl.webhookRazorpay);
 
-// Public availability probe — the checkout page hits this to decide
-// whether to show the Pay button or a "temporarily unavailable" card.
+/* ── Public availability probe ── */
 router.get('/available', ctrl.available);
 
+/* ── Authenticated endpoints ── */
 router.post(
   '/create-order',
   requireAuth,
@@ -30,17 +33,28 @@ router.post(
   validate(v.createOrderSchema),
   ctrl.createOrder,
 );
+
 router.get(
   '/order/:id/status',
   requireAuth,
   validate(v.orderIdParam, 'params'),
   ctrl.orderStatus,
 );
+
 router.post(
   '/order/:id/cancel',
   requireAuth,
   validate(v.orderIdParam, 'params'),
   ctrl.cancelOrder,
+);
+
+/* ── Razorpay widget callback verify ── */
+router.post(
+  '/razorpay/verify',
+  requireAuth,
+  paymentLimiter,
+  validate(v.verifyRazorpaySchema),
+  ctrl.verifyRazorpay,
 );
 
 module.exports = router;
