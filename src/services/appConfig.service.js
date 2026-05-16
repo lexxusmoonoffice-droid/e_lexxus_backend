@@ -36,54 +36,76 @@ async function reload() {
   const { Settings } = require('../models');
   const doc = await Settings.findOne(
     {},
-    '+integrations.zoho.clientSecret +integrations.zoho.refreshToken +integrations.zoho.webhookSecret +integrations.zoho.signingKey +integrations.b2.appKey +integrations.cloudflare.apiToken +integrations.smtp.pass +observability.sentryDsn',
+    '+integrations.zoho.clientSecret +integrations.zoho.refreshToken +integrations.zoho.webhookSecret +integrations.zoho.signingKey' +
+    ' +integrations.b2.appKey +integrations.cloudflare.apiToken +integrations.smtp.pass' +
+    ' +integrations.stripe.secretKey +integrations.stripe.webhookSecret' +
+    ' +integrations.razorpay.keySecret +integrations.razorpay.webhookSecret' +
+    ' +observability.sentryDsn',
   );
   const i = doc?.integrations || {};
   const l = doc?.limits || {};
   const o = doc?.observability || {};
+  const p = doc?.payments || {};
 
   cached = {
+    // ── payment provider flags & default ──────────────────────────────
+    payments: {
+      zohoEnabled:     mergeBoolean(p.zohoEnabled,     true),
+      stripeEnabled:   mergeBoolean(p.stripeEnabled,   false),
+      razorpayEnabled: mergeBoolean(p.razorpayEnabled, false),
+      defaultProvider: p.defaultProvider || 'zoho',
+    },
+    // ── provider credentials ─────────────────────────────────────────
     b2: {
-      keyId: mergeString(i.b2?.keyId, env.B2_KEY_ID),
-      appKey: mergeString(i.b2?.appKey, env.B2_APP_KEY),
-      bucketName: mergeString(i.b2?.bucketName, env.B2_BUCKET_NAME),
-      region: mergeString(i.b2?.region, env.B2_REGION),
-      endpoint: mergeString(i.b2?.endpoint, env.B2_ENDPOINT),
-      endpointHost: mergeString(i.b2?.endpointHost, env.B2_ENDPOINT_HOST),
-      cdnDomain: mergeString(i.b2?.cdnDomain, env.CDN_DOMAIN),
+      keyId:       mergeString(i.b2?.keyId,       env.B2_KEY_ID),
+      appKey:      mergeString(i.b2?.appKey,      env.B2_APP_KEY),
+      bucketName:  mergeString(i.b2?.bucketName,  env.B2_BUCKET_NAME),
+      region:      mergeString(i.b2?.region,      env.B2_REGION),
+      endpoint:    mergeString(i.b2?.endpoint,    env.B2_ENDPOINT),
+      endpointHost:mergeString(i.b2?.endpointHost,env.B2_ENDPOINT_HOST),
+      cdnDomain:   mergeString(i.b2?.cdnDomain,  env.CDN_DOMAIN),
     },
     cloudflare: {
       accountId: mergeString(i.cloudflare?.accountId, env.CF_ACCOUNT_ID),
-      apiToken: mergeString(i.cloudflare?.apiToken, env.CF_API_TOKEN),
+      apiToken:  mergeString(i.cloudflare?.apiToken,  env.CF_API_TOKEN),
     },
     zoho: {
-      clientId: mergeString(i.zoho?.clientId, env.ZOHO_CLIENT_ID),
+      clientId:     mergeString(i.zoho?.clientId,     env.ZOHO_CLIENT_ID),
       clientSecret: mergeString(i.zoho?.clientSecret, env.ZOHO_CLIENT_SECRET),
       refreshToken: mergeString(i.zoho?.refreshToken, env.ZOHO_REFRESH_TOKEN),
-      webhookSecret: mergeString(i.zoho?.webhookSecret, env.ZOHO_WEBHOOK_SECRET),
-      signingKey: mergeString(i.zoho?.signingKey, env.ZOHO_SIGNING_KEY),
-      apiKey: mergeString(i.zoho?.apiKey, env.ZOHO_API_KEY),
-      accountId: mergeString(i.zoho?.accountId, env.ZOHO_ACCOUNT_ID),
-      apiBase: mergeString(i.zoho?.apiBase, env.ZOHO_API_BASE) || 'https://payments.zoho.in/api/v1',
+      webhookSecret:mergeString(i.zoho?.webhookSecret,env.ZOHO_WEBHOOK_SECRET),
+      signingKey:   mergeString(i.zoho?.signingKey,   env.ZOHO_SIGNING_KEY),
+      apiKey:       mergeString(i.zoho?.apiKey,       env.ZOHO_API_KEY),
+      accountId:    mergeString(i.zoho?.accountId,    env.ZOHO_ACCOUNT_ID),
+      apiBase:      mergeString(i.zoho?.apiBase,      env.ZOHO_API_BASE) || 'https://payments.zoho.in/api/v1',
       accountsHost: mergeString(i.zoho?.accountsHost, '') || 'https://accounts.zoho.in',
-      scope: i.zoho?.scope || null,
-      connectedAt: i.zoho?.connectedAt || null,
+      scope:        i.zoho?.scope || null,
+      connectedAt:  i.zoho?.connectedAt || null,
+    },
+    stripe: {
+      secretKey:     mergeString(i.stripe?.secretKey,     env.STRIPE_SECRET_KEY),
+      webhookSecret: mergeString(i.stripe?.webhookSecret, env.STRIPE_WEBHOOK_SECRET),
+      currency:      mergeString(i.stripe?.currency,      env.STRIPE_CURRENCY) || 'inr',
+    },
+    razorpay: {
+      keyId:         mergeString(i.razorpay?.keyId,         env.RAZORPAY_KEY_ID),
+      keySecret:     mergeString(i.razorpay?.keySecret,     env.RAZORPAY_KEY_SECRET),
+      webhookSecret: mergeString(i.razorpay?.webhookSecret, env.RAZORPAY_WEBHOOK_SECRET),
+      currency:      mergeString(i.razorpay?.currency,      env.RAZORPAY_CURRENCY) || 'INR',
     },
     smtp: {
-      host: mergeString(i.smtp?.host, env.SMTP_HOST),
-      port: mergeNumber(i.smtp?.port, env.SMTP_PORT),
-      secure: mergeBoolean(i.smtp?.secure, env.SMTP_SECURE),
-      user: mergeString(i.smtp?.user, env.SMTP_USER),
-      pass: mergeString(i.smtp?.pass, env.SMTP_PASS),
+      host:     mergeString(i.smtp?.host,     env.SMTP_HOST),
+      port:     mergeNumber(i.smtp?.port,     env.SMTP_PORT),
+      secure:   mergeBoolean(i.smtp?.secure,  env.SMTP_SECURE),
+      user:     mergeString(i.smtp?.user,     env.SMTP_USER),
+      pass:     mergeString(i.smtp?.pass,     env.SMTP_PASS),
       mailFrom: mergeString(i.smtp?.mailFrom, env.MAIL_FROM),
     },
     limits: {
-      downloadTokenTtlDays: mergeNumber(l.downloadTokenTtlDays, env.DOWNLOAD_TOKEN_TTL_DAYS) || 30,
-      downloadLimitPerOrder: mergeNumber(l.downloadLimitPerOrder, env.DOWNLOAD_LIMIT_PER_ORDER) || 5,
-      downloadRateLimitPerHour:
-        mergeNumber(l.downloadRateLimitPerHour, env.DOWNLOAD_RATE_LIMIT_PER_HOUR) || 10,
-      globalRateLimitPer15Min:
-        mergeNumber(l.globalRateLimitPer15Min, env.GLOBAL_RATE_LIMIT_PER_15MIN) || 300,
+      downloadTokenTtlDays:    mergeNumber(l.downloadTokenTtlDays,    env.DOWNLOAD_TOKEN_TTL_DAYS)    || 30,
+      downloadLimitPerOrder:   mergeNumber(l.downloadLimitPerOrder,   env.DOWNLOAD_LIMIT_PER_ORDER)   || 5,
+      downloadRateLimitPerHour:mergeNumber(l.downloadRateLimitPerHour,env.DOWNLOAD_RATE_LIMIT_PER_HOUR)|| 10,
+      globalRateLimitPer15Min: mergeNumber(l.globalRateLimitPer15Min, env.GLOBAL_RATE_LIMIT_PER_15MIN)|| 300,
     },
     observability: {
       sentryDsn: mergeString(o.sentryDsn, env.SENTRY_DSN),
@@ -118,9 +140,12 @@ function get(path) {
     // Synchronous fallback — let callers work even before init() finishes.
     // Once init() lands, subsequent reads see DB values.
     return path.split('.').reduce((acc, k) => (acc ? acc[k] : undefined), {
+      payments: { zohoEnabled: true, stripeEnabled: false, razorpayEnabled: false, defaultProvider: 'zoho' },
       b2: { keyId: env.B2_KEY_ID, appKey: env.B2_APP_KEY, bucketName: env.B2_BUCKET_NAME, region: env.B2_REGION, endpoint: env.B2_ENDPOINT, endpointHost: env.B2_ENDPOINT_HOST, cdnDomain: env.CDN_DOMAIN },
       cloudflare: { accountId: env.CF_ACCOUNT_ID, apiToken: env.CF_API_TOKEN },
       zoho: { clientId: env.ZOHO_CLIENT_ID, clientSecret: env.ZOHO_CLIENT_SECRET, refreshToken: env.ZOHO_REFRESH_TOKEN, webhookSecret: env.ZOHO_WEBHOOK_SECRET, signingKey: env.ZOHO_SIGNING_KEY, apiKey: env.ZOHO_API_KEY, accountId: env.ZOHO_ACCOUNT_ID, apiBase: env.ZOHO_API_BASE || 'https://payments.zoho.in/api/v1', accountsHost: 'https://accounts.zoho.in' },
+      stripe: { secretKey: env.STRIPE_SECRET_KEY, webhookSecret: env.STRIPE_WEBHOOK_SECRET, currency: env.STRIPE_CURRENCY || 'inr' },
+      razorpay: { keyId: env.RAZORPAY_KEY_ID, keySecret: env.RAZORPAY_KEY_SECRET, webhookSecret: env.RAZORPAY_WEBHOOK_SECRET, currency: env.RAZORPAY_CURRENCY || 'INR' },
       smtp: { host: env.SMTP_HOST, port: env.SMTP_PORT, secure: env.SMTP_SECURE, user: env.SMTP_USER, pass: env.SMTP_PASS, mailFrom: env.MAIL_FROM },
       limits: { downloadTokenTtlDays: env.DOWNLOAD_TOKEN_TTL_DAYS || 30, downloadLimitPerOrder: env.DOWNLOAD_LIMIT_PER_ORDER || 5, downloadRateLimitPerHour: env.DOWNLOAD_RATE_LIMIT_PER_HOUR || 10, globalRateLimitPer15Min: env.GLOBAL_RATE_LIMIT_PER_15MIN || 300 },
       observability: { sentryDsn: env.SENTRY_DSN },
@@ -135,40 +160,53 @@ function current() { return cached; }
 function snapshotForAdmin() {
   const c = current();
   if (!c) return null;
-  const mask = (v) => (v ? '•••set•••' : '');
   return {
+    // ── payment toggles (fully safe to expose) ───────────────────────
+    payments: { ...c.payments },
+    // ── provider credentials (secrets masked) ────────────────────────
     b2: {
-      keyId: c.b2.keyId || '',
-      appKeySet: !!c.b2.appKey,
-      bucketName: c.b2.bucketName || '',
-      region: c.b2.region || '',
-      endpoint: c.b2.endpoint || '',
+      keyId:        c.b2.keyId || '',
+      appKeySet:    !!c.b2.appKey,
+      bucketName:   c.b2.bucketName || '',
+      region:       c.b2.region || '',
+      endpoint:     c.b2.endpoint || '',
       endpointHost: c.b2.endpointHost || '',
-      cdnDomain: c.b2.cdnDomain || '',
+      cdnDomain:    c.b2.cdnDomain || '',
     },
     cloudflare: {
-      accountId: c.cloudflare.accountId || '',
-      apiTokenSet: !!c.cloudflare.apiToken,
+      accountId:    c.cloudflare.accountId || '',
+      apiTokenSet:  !!c.cloudflare.apiToken,
     },
     zoho: {
-      clientId: c.zoho.clientId || '',
+      clientId:        c.zoho.clientId || '',
       clientSecretSet: !!c.zoho.clientSecret,
       refreshTokenSet: !!c.zoho.refreshToken,
-      webhookSecretSet: !!c.zoho.webhookSecret,
-      signingKeySet: !!c.zoho.signingKey,
-      accountId: c.zoho.accountId || '',       // non-sensitive, safe to expose
-      apiKeySet: !!c.zoho.apiKey,
-      apiBase: c.zoho.apiBase,
-      accountsHost: c.zoho.accountsHost,
-      connectedAt: c.zoho.connectedAt,
-      scope: c.zoho.scope,
+      webhookSecretSet:!!c.zoho.webhookSecret,
+      signingKeySet:   !!c.zoho.signingKey,
+      accountId:       c.zoho.accountId || '',  // non-sensitive
+      apiKeySet:       !!c.zoho.apiKey,
+      apiBase:         c.zoho.apiBase,
+      accountsHost:    c.zoho.accountsHost,
+      connectedAt:     c.zoho.connectedAt,
+      scope:           c.zoho.scope,
+    },
+    stripe: {
+      secretKeySet:     !!c.stripe.secretKey,
+      webhookSecretSet: !!c.stripe.webhookSecret,
+      currency:         c.stripe.currency || 'inr',
+    },
+    razorpay: {
+      keyId:            c.razorpay.keyId || '',   // public key — safe to expose
+      keySecretSet:     !!c.razorpay.keySecret,
+      webhookSecretSet: !!c.razorpay.webhookSecret,
+      currency:         c.razorpay.currency || 'INR',
     },
     smtp: {
-      host: c.smtp.host || '',
-      port: c.smtp.port || '',
-      secure: !!c.smtp.secure,
-      user: c.smtp.user || '',
-      passSet: !!c.smtp.pass,
+      host:     c.smtp.host || '',
+      port:     c.smtp.port || '',
+      secure:   !!c.smtp.secure,
+      user:     c.smtp.user || '',
+      passSet:  !!c.smtp.pass,
       mailFrom: c.smtp.mailFrom || '',
     },
     limits: { ...c.limits },
