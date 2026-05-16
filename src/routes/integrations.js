@@ -8,11 +8,16 @@
  *   PUT    /api/admin/integrations/cloudflare    store CF account + token
  *   PUT    /api/admin/integrations/smtp          store SMTP + mail from
  *   PUT    /api/admin/integrations/zoho          store client id/secret/api base
+ *   PUT    /api/admin/integrations/stripe        store Stripe secret key + webhook secret
+ *   PUT    /api/admin/integrations/razorpay      store Razorpay key id/secret
+ *   PUT    /api/admin/integrations/payments      toggle providers + set defaultProvider
  *   PUT    /api/admin/integrations/limits        token TTL, download limit, rate limits
  *   PUT    /api/admin/integrations/observability sentry dsn
  *   POST   /api/admin/integrations/test/b2       round-trip upload to B2
  *   POST   /api/admin/integrations/test/smtp     send a test email
  *   POST   /api/admin/integrations/test/cloudflare  verify CF token
+ *   POST   /api/admin/integrations/test/stripe   verify Stripe credentials
+ *   POST   /api/admin/integrations/test/razorpay verify Razorpay credentials
  */
 
 const express = require('express');
@@ -89,6 +94,23 @@ const limitsSchema = z.object({
 const observabilitySchema = z.object({
   sentryDsn: z.string().optional(),
 });
+const stripeSchema = z.object({
+  secretKey:     z.string().optional(),
+  webhookSecret: z.string().optional(),
+  currency:      z.string().min(3).max(3).toLowerCase().optional(),
+});
+const razorpaySchema = z.object({
+  keyId:         z.string().optional(),
+  keySecret:     z.string().optional(),
+  webhookSecret: z.string().optional(),
+  currency:      z.string().min(3).max(3).toUpperCase().optional(),
+});
+const paymentsSchema = z.object({
+  zohoEnabled:     z.boolean().optional(),
+  stripeEnabled:   z.boolean().optional(),
+  razorpayEnabled: z.boolean().optional(),
+  defaultProvider: z.enum(['zoho', 'stripe', 'razorpay']).optional(),
+});
 const testEmailSchema = z.object({ to: z.string().email() });
 
 /* ─── handlers ───────────────────────────────────────────────────── */
@@ -138,6 +160,30 @@ const putZoho = asyncHandler(async (req, res) => {
   const patch = stripEmptyButSavableBlanks(req.body);
   await saveIntegrations('zoho', patch);
   await audit.logAction(req, 'integrations.zoho', 'Settings', null);
+  res.json({ integrations: appConfig.snapshotForAdmin() });
+});
+
+const putStripe = asyncHandler(async (req, res) => {
+  const patch = stripEmptyButSavableBlanks(req.body);
+  await saveIntegrations('stripe', patch);
+  await audit.logAction(req, 'integrations.stripe', 'Settings', null, { after: { keys: Object.keys(patch) } });
+  res.json({ integrations: appConfig.snapshotForAdmin() });
+});
+
+const putRazorpay = asyncHandler(async (req, res) => {
+  const patch = stripEmptyButSavableBlanks(req.body);
+  await saveIntegrations('razorpay', patch);
+  await audit.logAction(req, 'integrations.razorpay', 'Settings', null, { after: { keys: Object.keys(patch) } });
+  res.json({ integrations: appConfig.snapshotForAdmin() });
+});
+
+const putPayments = asyncHandler(async (req, res) => {
+  const patch = {};
+  for (const k of ['zohoEnabled', 'stripeEnabled', 'razorpayEnabled', 'defaultProvider']) {
+    if (req.body[k] !== undefined) patch[k] = req.body[k];
+  }
+  await saveTop('payments', patch);
+  await audit.logAction(req, 'payments.settings', 'Settings', null, { after: patch });
   res.json({ integrations: appConfig.snapshotForAdmin() });
 });
 
@@ -198,6 +244,35 @@ const testCloudflare = asyncHandler(async (_req, res) => {
     });
     const json = await r.json();
     res.json({ ok: r.ok && json.success, status: json.result?.status, errors: json.errors });
+  } catch (err) {
+    res.status(502).json({ ok: false, error: err.message });
+  }
+});
+
+const testStripe = asyncHandler(async (_req, res) => {
+  const secretKey = appConfig.get('stripe.secretKey');
+  if (!secretKey) throw AppError.badRequest('Stripe secret key not configured', 'STRIPE_MISSING');
+  try {
+    const Stripe = require('stripe');
+    const stripe = new Stripe(secretKey, { apiVersion: '2024-04-10', telemetry: false });
+    // List 1 product to verify credentials — minimal API call.
+    await stripe.products.list({ limit: 1 });
+    res.json({ ok: true, message: 'Stripe credentials valid' });
+  } catch (err) {
+    res.status(502).json({ ok: false, error: err.message });
+  }
+});
+
+const testRazorpay = asyncHandler(async (_req, res) => {
+  const keyId     = appConfig.get('razorpay.keyId');
+  const keySecret = appConfig.get('razorpay.keySecret');
+  if (!keyId || !keySecret) throw AppError.badRequest('Razorpay credentials not configured', 'RAZORPAY_MISSING');
+  try {
+    const Razorpay = require('razorpay');
+    const rzp = new Razorpay({ key_id: keyId, key_secret: keySecret });
+    // Fetch account settings to verify credentials.
+    await rzp.orders.all({ count: 1 });
+    res.json({ ok: true, message: 'Razorpay credentials valid' });
   } catch (err) {
     res.status(502).json({ ok: false, error: err.message });
   }
@@ -285,10 +360,15 @@ router.put('/b2', validate(b2Schema), putB2);
 router.put('/cloudflare', validate(cloudflareSchema), putCloudflare);
 router.put('/smtp', validate(smtpSchema), putSmtp);
 router.put('/zoho', validate(zohoSchema), putZoho);
+router.put('/stripe', validate(stripeSchema), putStripe);
+router.put('/razorpay', validate(razorpaySchema), putRazorpay);
+router.put('/payments', validate(paymentsSchema), putPayments);
 router.put('/limits', validate(limitsSchema), putLimits);
 router.put('/observability', validate(observabilitySchema), putObservability);
 router.post('/test/b2', testB2);
 router.post('/test/smtp', validate(testEmailSchema), testSmtp);
 router.post('/test/cloudflare', testCloudflare);
+router.post('/test/stripe', testStripe);
+router.post('/test/razorpay', testRazorpay);
 
 module.exports = router;
