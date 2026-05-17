@@ -103,34 +103,34 @@ async function buildItemsFromCart(userId) {
  * @param {string} [opts.method]         - Payment method label (optional).
  */
 async function markPaid(order, { provider, paymentId, sessionId, method } = {}) {
-  if (order.status === 'paid') return order; // idempotent
-
-  const downloadToken = uuidv4();
-  const ttlDays = appConfig.get('limits.downloadTokenTtlDays') || 30;
-  const tokenExpiresAt = new Date(Date.now() + ttlDays * 24 * 60 * 60 * 1000);
-  const limit = appConfig.get('limits.downloadLimitPerOrder') || 5;
+  // ── H-1 FIX: atomic check-and-set — prevents duplicate emails on concurrent webhooks ──
+  const resolvedProvider = provider || order.payment?.provider || 'zoho';
+  const downloadToken   = uuidv4();
+  const ttlDays         = appConfig.get('limits.downloadTokenTtlDays') || 30;
+  const tokenExpiresAt  = new Date(Date.now() + ttlDays * 24 * 60 * 60 * 1000);
+  const limit           = appConfig.get('limits.downloadLimitPerOrder') || 5;
 
   // Build provider-specific payment field updates.
   const paymentUpdate = {
-    'payment.provider': provider || 'zoho',
-    'payment.method': method || null,
-    'payment.paidAt': new Date(),
+    'payment.provider': resolvedProvider,
+    'payment.method':   method || null,
+    'payment.paidAt':   new Date(),
   };
 
-  if (provider === 'stripe') {
-    if (sessionId)  paymentUpdate['payment.stripeSessionId']  = sessionId;
-    if (paymentId)  paymentUpdate['payment.stripePaymentId']  = paymentId;
-  } else if (provider === 'razorpay') {
-    if (sessionId)  paymentUpdate['payment.razorpayOrderId']   = sessionId;
-    if (paymentId)  paymentUpdate['payment.razorpayPaymentId'] = paymentId;
+  if (resolvedProvider === 'stripe') {
+    if (sessionId) paymentUpdate['payment.stripeSessionId']  = sessionId;
+    if (paymentId) paymentUpdate['payment.stripePaymentId']  = paymentId;
+  } else if (resolvedProvider === 'razorpay') {
+    if (sessionId) paymentUpdate['payment.razorpayOrderId']   = sessionId;
+    if (paymentId) paymentUpdate['payment.razorpayPaymentId'] = paymentId;
   } else {
-    // Zoho (default — keep backward-compat field names)
-    if (paymentId)  paymentUpdate['payment.zohoPaymentId'] = paymentId;
-    if (sessionId)  paymentUpdate['payment.zohoOrderId']   = sessionId;
+    if (paymentId) paymentUpdate['payment.zohoPaymentId'] = paymentId;
+    if (sessionId) paymentUpdate['payment.zohoOrderId']   = sessionId;
   }
 
-  await Order.updateOne(
-    { _id: order._id },
+  // Atomic: only update if still pending — guards against concurrent webhook delivery.
+  const result = await Order.updateOne(
+    { _id: order._id, status: { $ne: 'paid' } },
     {
       $set: {
         status: 'paid',
@@ -141,6 +141,11 @@ async function markPaid(order, { provider, paymentId, sessionId, method } = {}) 
       },
     },
   );
+
+  // modifiedCount === 0 means another concurrent request already paid this order.
+  if (result.modifiedCount === 0) {
+    return Order.findById(order._id).populate('buyer');
+  }
 
   // Bump downloadCount on product items.
   const productIds = order.items.filter((i) => i.product).map((i) => i.product);
@@ -230,6 +235,7 @@ async function createOrder({ user, billing, ip, userAgent, idempotencyKey, provi
     throw new AppError(`Payment provider "${provider}" is not enabled`, 503, 'PROVIDER_DISABLED');
   }
 
+  // C-1 FIX: use nested object — dot-notation keys are NOT supported in create()
   const order = await Order.create({
     buyer: user._id,
     items,
@@ -243,9 +249,9 @@ async function createOrder({ user, billing, ip, userAgent, idempotencyKey, provi
       email: billing.email || user.email,
       country: billing.country,
     },
+    payment: { provider },
     ipAtCheckout: ip,
     userAgentAtCheckout: userAgent,
-    'payment.provider': provider,
   });
 
   // ── Dev mock: skip all gateways, mark order paid immediately ──────────
@@ -337,19 +343,32 @@ async function _createRazorpayOrder(order, total) {
 /**
  * Verify the Razorpay widget callback and mark the order paid.
  * Called by POST /api/payments/razorpay/verify.
+ * buyerUserId is passed from the controller (req.user._id).
  */
-async function verifyRazorpayPayment({ razorpayOrderId, razorpayPaymentId, razorpaySignature, lexxusOrderId }) {
+async function verifyRazorpayPayment({ razorpayOrderId, razorpayPaymentId, razorpaySignature, lexxusOrderId, buyerUserId }) {
+  // 1. Verify Razorpay HMAC signature first — fast rejection path.
   const valid = razorpayService.verifyPaymentSignature({ razorpayOrderId, razorpayPaymentId, razorpaySignature });
   if (!valid) {
     throw new AppError('Invalid Razorpay signature', 400, 'INVALID_SIGNATURE');
   }
 
-  // Find order by lexxusOrderId (passed from frontend) or by razorpayOrderId stored on the order.
+  // 2. Find the order.
   const order = lexxusOrderId && mongoose.isValidObjectId(lexxusOrderId)
     ? await Order.findById(lexxusOrderId)
     : await Order.findOne({ 'payment.razorpayOrderId': razorpayOrderId });
 
   if (!order) throw AppError.notFound('Order not found');
+
+  // C-2 FIX: buyer ownership guard — prevents payment spoofing across users.
+  if (buyerUserId && String(order.buyer) !== String(buyerUserId)) {
+    throw AppError.forbidden('Order does not belong to you');
+  }
+
+  // C-2 FIX: razorpayOrderId cross-check — the stored ID must match the signed ID.
+  if (order.payment?.razorpayOrderId && order.payment.razorpayOrderId !== razorpayOrderId) {
+    throw new AppError('Razorpay order ID mismatch', 400, 'ORDER_MISMATCH');
+  }
+
   if (order.status === 'paid') return { status: 'ok', orderId: order._id.toString(), alreadyPaid: true };
 
   await markPaid(order, {

@@ -162,6 +162,7 @@ const verifyRazorpay = asyncHandler(async (req, res) => {
     razorpayPaymentId,
     razorpaySignature,
     lexxusOrderId: orderId,
+    buyerUserId: req.user._id, // C-2 FIX: pass buyer for ownership check
   });
   res.json(result);
 });

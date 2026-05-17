@@ -41,11 +41,13 @@ function adminUrl(path) {
 }
 
 const connect = asyncHandler(async (req, res) => {
-  if (!env.ZOHO_CLIENT_ID) {
-    throw AppError.badRequest('ZOHO_CLIENT_ID not set in backend .env', 'NO_CLIENT_ID');
+  // C-5 FIX: read clientId from appConfig (DB wins, env fallback) not env directly.
+  const clientId = appConfig.get('zoho.clientId') || env.ZOHO_CLIENT_ID;
+  if (!clientId) {
+    throw AppError.badRequest('Zoho Client ID not configured — set it via Admin → Integrations → Zoho or ZOHO_CLIENT_ID in .env', 'NO_CLIENT_ID');
   }
   const settings = await Settings.getSettings();
-  const accountsHost = settings.integrations?.zoho?.accountsHost || 'https://accounts.zoho.in';
+  const accountsHost = appConfig.get('zoho.accountsHost') || settings.integrations?.zoho?.accountsHost || 'https://accounts.zoho.in';
   const scope = req.query.scope || settings.integrations?.zoho?.scope || DEFAULT_SCOPE;
 
   const state = crypto.randomBytes(24).toString('hex');
@@ -57,7 +59,7 @@ const connect = asyncHandler(async (req, res) => {
 
   const params = new URLSearchParams({
     response_type: 'code',
-    client_id: env.ZOHO_CLIENT_ID,
+    client_id: clientId,   // C-5 FIX: use appConfig value
     scope,
     redirect_uri: callbackUri(),
     access_type: 'offline',
@@ -71,14 +73,14 @@ const connect = asyncHandler(async (req, res) => {
 const callback = asyncHandler(async (req, res) => {
   const { code, state, error } = req.query;
   if (error) {
-    return res.redirect(adminUrl(`/settings?zoho=error&reason=${encodeURIComponent(String(error))}`));
+    return res.redirect(adminUrl(`/integrations?zoho=error&reason=${encodeURIComponent(String(error))}`));
   }
   if (!code || !state) {
-    return res.redirect(adminUrl('/settings?zoho=error&reason=missing-code'));
+    return res.redirect(adminUrl('/integrations?zoho=error&reason=missing-code'));
   }
   const ctx = await cache.get(STATE_PREFIX + state);
   if (!ctx) {
-    return res.redirect(adminUrl('/settings?zoho=error&reason=state-expired'));
+    return res.redirect(adminUrl('/integrations?zoho=error&reason=state-expired'));
   }
   await cache.del(STATE_PREFIX + state);
 
@@ -92,7 +94,7 @@ const callback = asyncHandler(async (req, res) => {
   } catch (e) {
     logger.error('zoho.callback exchange failed', { err: e.message });
     return res.redirect(
-      adminUrl(`/settings?zoho=error&reason=${encodeURIComponent('exchange-failed')}`),
+      adminUrl(`/integrations?zoho=error&reason=${encodeURIComponent('exchange-failed')}`),
     );
   }
 
@@ -119,7 +121,7 @@ const callback = asyncHandler(async (req, res) => {
   if (env.NODE_ENV === 'development' && req.query._dev) {
     return res.send('<h1>Zoho Connected!</h1><p>Refresh token saved. Payments are now enabled. You can close this tab.</p>');
   }
-  return res.redirect(adminUrl('/settings?zoho=connected'));
+  return res.redirect(adminUrl('/integrations?zoho=connected'));
 });
 
 const status = asyncHandler(async (req, res) => {
