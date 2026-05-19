@@ -152,8 +152,19 @@ async function refundPayment({ paymentIntentId, amount, reason }) {
   return refund;
 }
 
+/**
+ * Retrieve a Checkout Session from Stripe — used as a webhook fallback
+ * for local dev where Stripe can't reach localhost.
+ * Returns the raw Stripe session object.
+ */
+async function retrieveSession(sessionId) {
+  const stripe = getStripe();
+  return stripe.checkout.sessions.retrieve(sessionId);
+}
+
 module.exports = {
   createCheckoutSession,
+  retrieveSession,
   verifyWebhookSignature,
   extractRefId,
   extractPaymentIds,

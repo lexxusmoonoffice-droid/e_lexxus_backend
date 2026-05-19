@@ -8,6 +8,7 @@
 
 const registry = {
   'verify-email': require('./verify-email'),
+  'verify-new-email': require('./verify-new-email'),
   'password-reset': require('./password-reset'),
   welcome: require('./welcome'),
   'order-confirmation': require('./order-confirmation'),

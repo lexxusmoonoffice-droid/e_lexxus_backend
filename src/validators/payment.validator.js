@@ -13,6 +13,8 @@ const createOrderSchema = z.object({
   }),
   // Optional provider override — admin/testing only; defaults to appConfig
   provider: z.enum(['zoho', 'stripe', 'razorpay']).optional(),
+  // Currency the customer selected (INR or USD). Defaults to INR if omitted.
+  currency: z.enum(['INR', 'USD']).optional(),
 });
 
 const orderIdParam = z.object({ id: objectId });

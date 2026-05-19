@@ -168,15 +168,27 @@ async function verifyEmail(rawToken) {
   const user = await User.findOne({
     emailVerifyTokenHash: tokenHash,
     emailVerifyTokenExpiresAt: { $gt: new Date() },
-  }).select('+emailVerifyTokenHash +emailVerifyTokenExpiresAt');
+  }).select('+emailVerifyTokenHash +emailVerifyTokenExpiresAt +pendingEmail');
   if (!user) throw AppError.badRequest('Invalid or expired verification link', 'BAD_VERIFY_TOKEN');
+
+  const isEmailChange = !!user.pendingEmail;
+
+  // Email-change flow: promote the staged address to the live email.
+  if (isEmailChange) {
+    user.email = user.pendingEmail;
+    user.pendingEmail = undefined;
+  }
 
   user.verified = true;
   user.emailVerifyTokenHash = undefined;
   user.emailVerifyTokenExpiresAt = undefined;
   await user.save();
 
-  await sendWelcomeEmail(user);
+  // Only send the welcome email on initial signup verification.
+  if (!isEmailChange) {
+    await sendWelcomeEmail(user);
+  }
+
   return publicUser(user);
 }
 
@@ -302,6 +314,7 @@ module.exports = {
   refreshCookieOptions,
   sendOtp,
   verifyOtp,
-  // exported for tests:
+  // exported for tests and internal use:
   issueRefreshToken,
+  issueVerifyToken,
 };

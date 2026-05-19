@@ -6,8 +6,12 @@
  * Never blocks the caller — failures are logged and swallowed.
  */
 
-const { AuditLog } = require('../models');
+const { AuditLog, User } = require('../models');
 const logger = require('../config/logger');
+
+function escapeRegex(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 async function logAction(req, action, entity, entityId, { before, after } = {}) {
   try {
@@ -32,6 +36,26 @@ async function list(query = {}) {
   if (query.action) filter.action = query.action;
   if (query.actor) filter.actor = query.actor;
   if (query.entityId) filter.entityId = query.entityId;
+
+  const q = typeof query.q === 'string' ? query.q.trim() : '';
+  if (q) {
+    const rx = new RegExp(escapeRegex(q), 'i');
+    const matchingActors = await User.find({ $or: [{ email: rx }, { name: rx }] })
+      .select('_id')
+      .lean();
+    const actorIds = matchingActors.map((u) => u._id);
+
+    const or = [
+      { action: rx },
+      { entity: rx },
+      { entityId: rx },
+      { ip: rx },
+    ];
+    if (actorIds.length) or.push({ actor: { $in: actorIds } });
+
+    filter.$and = [...(filter.$and || []), { $or: or }];
+  }
+
   return AuditLog.paginate(filter, {
     page: query.page,
     limit: query.limit,

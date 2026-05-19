@@ -64,7 +64,8 @@ const createOrder = asyncHandler(async (req, res) => {
     ip: req.ip,
     userAgent: req.headers['user-agent'],
     idempotencyKey: req.headers['idempotency-key'] || req.headers['x-idempotency-key'],
-    provider: req.body.provider || null, // optional override; defaults to appConfig
+    provider: req.body.provider || null,   // optional override; defaults to appConfig
+    currency: req.body.currency || 'INR',  // 'INR' | 'USD' — auto-detected by frontend
   });
   res.status(201).json(out);
 });
@@ -72,7 +73,11 @@ const createOrder = asyncHandler(async (req, res) => {
 /* ────────── order status / cancel ────────── */
 
 const orderStatus = asyncHandler(async (req, res) => {
-  res.json(await paymentService.getOrderStatus(req.user, req.params.id));
+  // session_id is appended by Stripe to the success_url redirect.
+  // Pass it through so getOrderStatus can verify the session directly
+  // when webhooks can't reach localhost (local dev fallback).
+  const stripeSessionId = req.query.session_id || null;
+  res.json(await paymentService.getOrderStatus(req.user, req.params.id, { stripeSessionId }));
 });
 
 const cancelOrder = asyncHandler(async (req, res) => {

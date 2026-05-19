@@ -50,10 +50,13 @@ async function reload() {
   cached = {
     // ── payment provider flags & default ──────────────────────────────
     payments: {
+      // Auto-enable a provider when its credentials are present in env,
+      // unless the DB explicitly disabled it (false).
       zohoEnabled:     mergeBoolean(p.zohoEnabled,     true),
-      stripeEnabled:   mergeBoolean(p.stripeEnabled,   false),
-      razorpayEnabled: mergeBoolean(p.razorpayEnabled, false),
-      defaultProvider: p.defaultProvider || 'zoho',
+      stripeEnabled:   mergeBoolean(p.stripeEnabled,   !!(env.STRIPE_SECRET_KEY)),
+      razorpayEnabled: mergeBoolean(p.razorpayEnabled, !!(env.RAZORPAY_KEY_ID && env.RAZORPAY_KEY_SECRET)),
+      // env.PAYMENT_PROVIDER wins over DB setting (easy local override)
+      defaultProvider: env.PAYMENT_PROVIDER || p.defaultProvider || 'zoho',
     },
     // ── provider credentials ─────────────────────────────────────────
     b2: {

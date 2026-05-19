@@ -218,7 +218,25 @@ async function markRefunded(order) {
 
 /* ────────── create-order (provider router) ────────── */
 
-async function createOrder({ user, billing, ip, userAgent, idempotencyKey, provider: requestedProvider }) {
+/* ────────── FX rates (static — Phase 11 will add live API) ────────── */
+
+const FX_RATES = { INR: 1, USD: 0.012 }; // multiply INR by rate → target currency
+const SUPPORTED_CURRENCIES = new Set(Object.keys(FX_RATES));
+
+/**
+ * Convert an INR amount to the requested currency.
+ * @param {number} amountInr  — raw price from DB (always INR)
+ * @param {string} currency   — 'INR' | 'USD'
+ * @returns {number}          — amount in target currency (decimal major units)
+ */
+function convertFromInr(amountInr, currency) {
+  const rate = FX_RATES[currency] ?? FX_RATES.INR;
+  const converted = amountInr * rate;
+  // USD → round to 2 decimal places; INR → integer
+  return currency === 'INR' ? Math.round(converted) : Math.round(converted * 100) / 100;
+}
+
+async function createOrder({ user, billing, ip, userAgent, idempotencyKey, provider: requestedProvider, currency: requestedCurrency }) {
   // Idempotency cache.
   const cacheKey = idempotencyKey ? `idem:create-order:${user._id}:${idempotencyKey}` : null;
   if (cacheKey) {
@@ -227,22 +245,38 @@ async function createOrder({ user, billing, ip, userAgent, idempotencyKey, provi
   }
 
   const { items, subtotal, creators } = await buildItemsFromCart(user._id);
-  const total = subtotal;
 
-  // Determine provider: caller may request one; fall back to configured default.
+  // Validate and resolve currency.
+  // Only INR and USD are accepted. Stripe is the only gateway that supports
+  // USD; Razorpay and Zoho always use INR.
   const provider = requestedProvider || getDefaultProvider();
   if (!isProviderEnabled(provider)) {
     throw new AppError(`Payment provider "${provider}" is not enabled`, 503, 'PROVIDER_DISABLED');
   }
+
+  // Stripe supports both INR and USD. Razorpay / Zoho → always INR.
+  const allowedCurrency =
+    provider === 'stripe' && requestedCurrency === 'USD' ? 'USD' : 'INR';
+
+  // Amount the gateway will actually charge (in the gateway's currency).
+  const gatewayAmount = convertFromInr(subtotal, allowedCurrency);
+
+  logger.info('createOrder currency', {
+    requestedCurrency,
+    allowedCurrency,
+    subtotalInr: subtotal,
+    gatewayAmount,
+    provider,
+  });
 
   // C-1 FIX: use nested object — dot-notation keys are NOT supported in create()
   const order = await Order.create({
     buyer: user._id,
     items,
     creators,
-    subtotal,
-    total,
-    currency: 'INR',
+    subtotal,                   // always in INR (our canonical unit)
+    total: subtotal,
+    currency: allowedCurrency,  // what the customer will be charged in
     status: 'pending',
     billing: {
       name: billing.name || user.name,
@@ -270,11 +304,11 @@ async function createOrder({ user, billing, ip, userAgent, idempotencyKey, provi
   let result;
   try {
     if (provider === 'stripe') {
-      result = await _createStripeOrder(order, user, total);
+      result = await _createStripeOrder(order, user, gatewayAmount, allowedCurrency);
     } else if (provider === 'razorpay') {
-      result = await _createRazorpayOrder(order, total);
+      result = await _createRazorpayOrder(order, gatewayAmount);
     } else {
-      result = await _createZohoOrder(order, user, total);
+      result = await _createZohoOrder(order, user, gatewayAmount);
     }
   } catch (err) {
     logger.error(`${provider}.createOrder failed`, { message: err.message });
@@ -304,9 +338,12 @@ async function _createZohoOrder(order, user, total) {
   return { orderId: order._id.toString(), paymentUrl: session.paymentUrl, provider: 'zoho' };
 }
 
-async function _createStripeOrder(order, user, total) {
+async function _createStripeOrder(order, user, amount, currency = 'INR') {
+  // `amount` is already converted to the target currency by createOrder().
+  // stripe.service.createCheckoutSession converts it to the smallest unit (paise / cents).
   const session = await stripeService.createCheckoutSession({
-    amount: total,
+    amount,
+    currency: currency.toLowerCase(), // stripe expects lowercase iso code
     description: `Order ${String(order._id)}`,
     referenceId: String(order._id),
     redirectUrl: `${env.FRONTEND_URL}/checkout/success?orderId=${order._id}`,
@@ -567,9 +604,43 @@ async function handleRazorpayWebhookEvent(event) {
 
 /* ────────── status / cancel / refund ────────── */
 
-async function getOrderStatus(user, orderId) {
+async function getOrderStatus(user, orderId, { stripeSessionId } = {}) {
   const order = await Order.findOne({ _id: orderId, buyer: user._id });
   if (!order) throw AppError.notFound('Order not found');
+
+  // ── Stripe fallback for local dev (webhooks don't reach localhost) ──
+  // If the order is still pending AND we have a Stripe session ID (either
+  // stored on the order or passed as a query param from the success URL),
+  // verify the session status directly with Stripe and auto-mark as paid.
+  if (order.status === 'pending' && order.payment?.provider === 'stripe') {
+    const sessionId = stripeSessionId || order.payment?.stripeSessionId;
+    if (sessionId) {
+      try {
+        const session = await stripeService.retrieveSession(sessionId);
+        if (session?.payment_status === 'paid') {
+          logger.info('stripe: session paid (fallback verify)', { orderId, sessionId });
+          await markPaid(order, {
+            provider: 'stripe',
+            paymentId: session.payment_intent,
+            sessionId,
+          });
+          // Re-fetch the updated order
+          const updated = await Order.findById(order._id);
+          return {
+            id: updated._id.toString(),
+            status: updated.status,
+            provider: updated.payment?.provider || 'stripe',
+            paidAt: updated.payment?.paidAt,
+            downloadToken: updated.status === 'paid' ? updated.downloadToken : null,
+            tokenExpiresAt: updated.tokenExpiresAt,
+          };
+        }
+      } catch (e) {
+        logger.warn('stripe: fallback session verify failed', { err: e.message, sessionId });
+      }
+    }
+  }
+
   return {
     id: order._id.toString(),
     status: order.status,

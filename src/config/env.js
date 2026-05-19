@@ -91,6 +91,10 @@ const schema = z.object({
     .transform((v) => (typeof v === 'boolean' ? v : v === 'true'))
     .default(false),
 
+  // Default payment provider — overrides DB setting when set
+  // Accepts: 'zoho' | 'stripe' | 'razorpay'
+  PAYMENT_PROVIDER: z.enum(['zoho', 'stripe', 'razorpay']).optional(),
+
   // Stripe — optional; enable via Admin → Integrations
   STRIPE_SECRET_KEY: z.string().optional().default(''),
   STRIPE_WEBHOOK_SECRET: z.string().optional().default(''),

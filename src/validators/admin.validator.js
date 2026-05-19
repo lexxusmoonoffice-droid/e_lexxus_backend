@@ -93,7 +93,7 @@ const categoryUpsert = z.object({
   name: z.string().trim().min(1),
   slug: z.string().trim().optional(),
   parent: objectId.nullable().optional(),
-  image: z.string().optional(),
+  image: z.string().nullable().optional(),
   order: z.coerce.number().int().optional(),
   status: z.enum(['active', 'hidden']).optional(),
 });
