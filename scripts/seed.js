@@ -43,7 +43,7 @@ async function seedUsers() {
           bio: u.bio,
           status: 'active',
         },
-        $setOnInsert: { passwordHash },
+        $set: { passwordHash },
       },
       { upsert: true, new: true },
     );
