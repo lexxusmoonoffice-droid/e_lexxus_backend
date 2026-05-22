@@ -20,12 +20,12 @@ const imagePresignSchema = z.object({
   filename,
   mimeType,
   size,
-  kind: z.enum(['product', 'bundle', 'blog', 'hero', 'avatar']),
+  kind: z.enum(['product', 'bundle', 'blog', 'hero', 'avatar', 'brand', 'category']),
 });
 
 const imageConfirmSchema = z.object({
   fileKey: z.string().min(1),
-  kind: z.enum(['product', 'bundle', 'blog', 'hero', 'avatar']),
+  kind: z.enum(['product', 'bundle', 'blog', 'hero', 'avatar', 'brand', 'category']),
   refId: objectId.optional(),
   role: z.enum(['thumbnail', 'gallery']).optional(),
 });

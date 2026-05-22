@@ -33,6 +33,7 @@ const IMAGE_KIND_TO_PREFIX = {
   hero: 'images/hero',
   avatar: 'images/avatar',
   brand: 'images/brand',
+  category: 'images/category',
 };
 
 /* ────────── helpers ────────── */
@@ -199,6 +200,11 @@ async function attachImageToEntity({ kind, refId, fileKey, urls, role }) {
   if (kind === 'brand') {
     const { Brand } = require('../models');
     await Brand.updateOne({ _id: refId }, { $set: { logo: urls.full || urls.original } });
+    return;
+  }
+  if (kind === 'category') {
+    const { Category } = require('../models');
+    await Category.updateOne({ _id: refId }, { $set: { image: urls.full || urls.original } });
   }
 }
 

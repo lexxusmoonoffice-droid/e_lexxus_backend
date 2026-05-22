@@ -1,6 +1,6 @@
 const asyncHandler = require('../../utils/asyncHandler');
 const AppError = require('../../utils/AppError');
-const { Category } = require('../../models');
+const { Category, Product } = require('../../models');
 const audit = require('../../services/audit.service');
 const invalidate = require('../../services/invalidation.service');
 
@@ -43,8 +43,20 @@ const update = asyncHandler(async (req, res) => {
 });
 
 const remove = asyncHandler(async (req, res) => {
-  const category = await Category.findByIdAndDelete(req.params.id);
+  const category = await Category.findById(req.params.id);
   if (!category) throw AppError.notFound('Category not found');
+
+  const childCount = await Category.countDocuments({ parent: category._id });
+  if (childCount > 0) {
+    throw AppError.badRequest(`Cannot delete — this category has ${childCount} subcategori${childCount === 1 ? 'y' : 'es'}. Remove them first.`);
+  }
+
+  const productCount = await Product.countDocuments({ $or: [{ category: category._id }, { subCategory: category._id }] });
+  if (productCount > 0) {
+    throw AppError.badRequest(`Cannot delete — ${productCount} product${productCount === 1 ? ' is' : 's are'} assigned to this category.`);
+  }
+
+  await category.deleteOne();
   await audit.logAction(req, 'category.delete', 'Category', category._id, { before: category.toJSON() });
   await invalidate.categories();
   res.status(204).end();

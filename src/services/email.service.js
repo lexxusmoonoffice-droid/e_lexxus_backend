@@ -42,6 +42,21 @@ async function sendVerifyEmail(user, rawToken) {
   });
 }
 
+/**
+ * Sent to the *new* email address when a user requests an email change.
+ * The current `user.email` is still the old address at this point.
+ * @param {object} user - current user doc (name, existing email)
+ * @param {string} newEmail - the pending new address to send to
+ * @param {string} rawToken - raw verification token
+ */
+async function sendVerifyNewEmailEmail(user, newEmail, rawToken) {
+  return enqueueEmail({
+    template: 'verify-new-email',
+    to: newEmail,
+    data: { user: toJson(user), newEmail, url: verifyEmailUrl(rawToken) },
+  });
+}
+
 async function sendPasswordResetEmail(user, rawToken) {
   return enqueueEmail({
     template: 'password-reset',
@@ -126,6 +141,7 @@ async function sendOtpEmail(user, otp) {
 
 module.exports = {
   sendVerifyEmail,
+  sendVerifyNewEmailEmail,
   sendPasswordResetEmail,
   sendWelcomeEmail,
   sendOrderConfirmationEmail,

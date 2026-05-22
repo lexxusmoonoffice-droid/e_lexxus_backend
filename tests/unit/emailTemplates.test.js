@@ -16,10 +16,12 @@ describe('email templates', () => {
         'account-suspended',
         'download-link',
         'order-confirmation',
+        'otp-login',
         'password-reset',
         'payment-failed',
         'refund',
         'verify-email',
+        'verify-new-email',
         'welcome',
       ].sort(),
     );
@@ -33,6 +35,19 @@ describe('email templates', () => {
     });
     expect(subject).toMatch(/Verify/);
     expect(html).toContain('Alex Novak');
+    expect(html).toContain('https://lexxus.com/verify?token=xyz');
+  });
+
+  it('verify-new-email renders subject + html with new address and url', () => {
+    const { subject, html } = render('verify-new-email', {
+      appName: 'Lexxus',
+      user: sampleUser,
+      newEmail: 'newemail@example.com',
+      url: 'https://lexxus.com/verify?token=xyz',
+    });
+    expect(subject).toMatch(/Confirm your new/i);
+    expect(html).toContain('Alex Novak');
+    expect(html).toContain('newemail@example.com');
     expect(html).toContain('https://lexxus.com/verify?token=xyz');
   });
 

@@ -174,7 +174,9 @@ async function refundPayment({ paymentId, amount, reason }) {
       Authorization: `Zoho-oauthtoken ${token}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ amount: Math.round(amount * 100), reason }),
+    // C-4 FIX: Zoho Payments India uses decimal rupees throughout (same as
+    // createCheckoutSession). Sending paise (×100) would charge 100× too much.
+    body: JSON.stringify({ amount: Number(amount.toFixed(2)), reason }),
   });
   if (!res.ok) {
     const text = await res.text().catch(() => '');

@@ -44,11 +44,15 @@ const patchStatus = asyncHandler(async (req, res) => {
   // stamp paidAt, bump product download counts, send receipt + download
   // email, drop notification). Without this the buyer can never download.
   if (before.status === 'pending' && next === 'paid') {
-    order = await paymentService.markPaid(before, { manual: true, actor: req.user?._id?.toString() });
+    // C-3 FIX: preserve existing provider so future refunds route to the right gateway.
+    const provider = before.payment?.provider || paymentService.getDefaultProvider();
+    order = await paymentService.markPaid(before, { provider });
   } else if (before.status === 'paid' && next === 'refunded') {
     order = await paymentService.markRefunded(before);
   } else if (before.status === 'pending' && next === 'failed') {
-    order = await paymentService.markFailed(before, { manual: true });
+    // C-3 FIX: same — preserve provider.
+    const provider = before.payment?.provider || paymentService.getDefaultProvider();
+    order = await paymentService.markFailed(before, { provider });
   } else {
     order = await Order.findByIdAndUpdate(
       req.params.id,

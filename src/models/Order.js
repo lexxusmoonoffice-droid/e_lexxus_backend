@@ -35,10 +35,20 @@ const orderSchema = new Schema(
       index: true,
     },
     payment: {
+      // Which provider processed this payment
+      provider: { type: String, enum: ['zoho', 'stripe', 'razorpay'] },
+      // Zoho Payments
       zohoPaymentId: { type: String, index: true },
-      zohoOrderId: { type: String, index: true },
-      method: String,
-      paidAt: Date,
+      zohoOrderId:   { type: String, index: true },
+      // Stripe
+      stripeSessionId:  { type: String, index: true, sparse: true },
+      stripePaymentId:  { type: String, index: true, sparse: true },
+      // Razorpay
+      razorpayOrderId:   { type: String, index: true, sparse: true },
+      razorpayPaymentId: { type: String, index: true, sparse: true },
+      // Shared
+      method:     String,
+      paidAt:     Date,
       refundedAt: Date,
     },
     billing: {

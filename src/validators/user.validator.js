@@ -51,6 +51,7 @@ const wishlistAddSchema = z
 
 const updateProfileSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
+  email: z.string().trim().toLowerCase().email().max(254).optional(),
   bio: z.string().max(500).optional(),
   avatar: z.string().url().optional(),
 });

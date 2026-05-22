@@ -6,6 +6,10 @@ const tree = asyncHandler(async (req, res) => {
   res.json({ data: await categoryService.getTree() });
 });
 
+const treeWithPreviews = asyncHandler(async (req, res) => {
+  res.json({ data: await categoryService.getTreeWithPreviews() });
+});
+
 const detail = asyncHandler(async (req, res) => {
   const { category, children } = await categoryService.getCategoryBySlug(req.params.slug);
   // First page of products in this category, for convenience.
@@ -13,4 +17,4 @@ const detail = asyncHandler(async (req, res) => {
   res.json({ category, children, products });
 });
 
-module.exports = { tree, detail };
+module.exports = { tree, detail, treeWithPreviews };

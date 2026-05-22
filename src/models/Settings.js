@@ -12,9 +12,11 @@ const settingsSchema = new Schema(
     supportEmail: String,
     defaultCurrency: { type: String, default: 'INR' },
     payments: {
-      zohoEnabled: { type: Boolean, default: true },
-      stripeEnabled: { type: Boolean, default: false },
-      paypalEnabled: { type: Boolean, default: false },
+      zohoEnabled:     { type: Boolean, default: true },
+      stripeEnabled:   { type: Boolean, default: false },
+      razorpayEnabled: { type: Boolean, default: false },
+      // Which provider handles checkout when multiple are enabled
+      defaultProvider: { type: String, enum: ['zoho', 'stripe', 'razorpay'], default: 'zoho' },
     },
     social: {
       twitter: String,
@@ -68,6 +70,17 @@ const settingsSchema = new Schema(
         user: { type: String },
         pass: { type: String, select: false },
         mailFrom: { type: String },
+      },
+      stripe: {
+        secretKey:     { type: String, select: false }, // sk_live_... / sk_test_...
+        webhookSecret: { type: String, select: false }, // whsec_...
+        currency:      { type: String, default: 'inr' }, // ISO 4217 lowercase
+      },
+      razorpay: {
+        keyId:         { type: String },                 // rzp_live_... (public — goes to frontend)
+        keySecret:     { type: String, select: false },  // secret key
+        webhookSecret: { type: String, select: false },  // webhook signing secret
+        currency:      { type: String, default: 'INR' }, // ISO 4217 uppercase
       },
     },
     limits: {

@@ -82,4 +82,54 @@ productSchema.pre('validate', function preValidate(next) {
   next();
 });
 
+// ── productCount denormalization ──────────────────────────────────────────────
+
+productSchema.pre('save', async function trackCategoryChange() {
+  this._wasNew = this.isNew;
+  if (!this.isNew && this.isModified('category')) {
+    const prev = await mongoose.model('Product').findById(this._id).select('category').lean();
+    this._prevCategory = prev?.category ?? null;
+  }
+});
+
+productSchema.post('save', async function syncCountOnSave() {
+  const Category = mongoose.model('Category');
+  if (this._wasNew) {
+    if (this.category) await Category.updateOne({ _id: this.category }, { $inc: { productCount: 1 } });
+  } else if (this._prevCategory !== undefined) {
+    const oldId = this._prevCategory?.toString();
+    const newId = this.category?.toString();
+    if (oldId !== newId) {
+      if (oldId) await Category.updateOne({ _id: oldId }, { $inc: { productCount: -1 } });
+      if (newId) await Category.updateOne({ _id: newId }, { $inc: { productCount: 1 } });
+    }
+  }
+});
+
+productSchema.post('findOneAndDelete', async function syncCountOnDelete(doc) {
+  if (doc?.category) {
+    await mongoose.model('Category').updateOne({ _id: doc.category }, { $inc: { productCount: -1 } });
+  }
+});
+
+productSchema.pre('deleteMany', async function captureDeletedCategories() {
+  const docs = await mongoose.model('Product').find(this.getFilter()).select('category').lean();
+  this._deletedCategories = docs.map((d) => d.category).filter(Boolean);
+});
+
+productSchema.post('deleteMany', async function syncCountOnBulkDelete() {
+  if (!this._deletedCategories?.length) return;
+  const Category = mongoose.model('Category');
+  const counts = {};
+  for (const catId of this._deletedCategories) {
+    const k = catId.toString();
+    counts[k] = (counts[k] || 0) + 1;
+  }
+  await Promise.all(
+    Object.entries(counts).map(([id, n]) =>
+      Category.updateOne({ _id: id }, { $inc: { productCount: -n } }),
+    ),
+  );
+});
+
 module.exports = mongoose.model('Product', productSchema);

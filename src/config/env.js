@@ -85,11 +85,26 @@ const schema = z.object({
   GOOGLE_CLIENT_ID: z.string().optional().default(''),
   GOOGLE_CLIENT_SECRET: z.string().optional().default(''),
 
-  // Dev mock payments — set to "true" to skip Zoho and auto-mark orders paid
+  // Dev mock payments — set to "true" to skip all gateways and auto-mark orders paid
   PAYMENT_MOCK: z
     .union([z.boolean(), z.string()])
     .transform((v) => (typeof v === 'boolean' ? v : v === 'true'))
     .default(false),
+
+  // Default payment provider — overrides DB setting when set
+  // Accepts: 'zoho' | 'stripe' | 'razorpay'
+  PAYMENT_PROVIDER: z.enum(['zoho', 'stripe', 'razorpay']).optional(),
+
+  // Stripe — optional; enable via Admin → Integrations
+  STRIPE_SECRET_KEY: z.string().optional().default(''),
+  STRIPE_WEBHOOK_SECRET: z.string().optional().default(''),
+  STRIPE_CURRENCY: z.string().default('inr'), // ISO 4217 lowercase
+
+  // Razorpay — optional; enable via Admin → Integrations
+  RAZORPAY_KEY_ID: z.string().optional().default(''),
+  RAZORPAY_KEY_SECRET: z.string().optional().default(''),
+  RAZORPAY_WEBHOOK_SECRET: z.string().optional().default(''),
+  RAZORPAY_CURRENCY: z.string().default('INR'), // ISO 4217 uppercase
 });
 
 let parsed;

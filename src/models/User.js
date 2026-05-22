@@ -40,6 +40,9 @@ const userSchema = new Schema(
     },
     totalEarnings: { type: Number, default: 0, min: 0 },
     lastLoginAt: Date,
+    // Staged new email address — set when the user requests an email change.
+    // Copied to `email` once the new address is confirmed; cleared then.
+    pendingEmail: { type: String, select: false },
     // Email verification + password reset — only the SHA-256 hash is stored.
     emailVerifyTokenHash: { type: String, select: false },
     emailVerifyTokenExpiresAt: { type: Date, select: false },

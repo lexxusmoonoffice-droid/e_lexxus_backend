@@ -63,9 +63,20 @@ function buildApp() {
 
   // Security baseline
   app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+
+  // In development, allow any localhost port (Next.js / Claude Preview can use dynamic ports).
+  // In production, restrict to the configured FRONTEND_URL and ADMIN_URL only.
+  const prodOrigins = [env.FRONTEND_URL, env.ADMIN_URL].filter(Boolean);
+  const localhostRe = /^https?:\/\/localhost(:\d+)?$/;
+
   app.use(
     cors({
-      origin: [env.FRONTEND_URL, env.ADMIN_URL],
+      origin: (origin, cb) => {
+        if (!origin) return cb(null, true); // curl, Postman, server-to-server
+        if (env.NODE_ENV !== 'production' && localhostRe.test(origin)) return cb(null, true);
+        if (prodOrigins.includes(origin)) return cb(null, true);
+        cb(new Error(`CORS: origin ${origin} not allowed`));
+      },
       credentials: true,
       exposedHeaders: ['x-request-id'],
     }),
