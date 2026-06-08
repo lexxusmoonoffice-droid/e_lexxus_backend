@@ -52,7 +52,12 @@ async function buildFilter(query) {
   }
   if (query.subCategory) {
     const id = await resolveRefId(Category, query.subCategory);
-    if (id) filter.subCategory = id;
+    if (id) {
+      // Match both storage formats:
+      //   New: product.subCategory = id  (category field = parent)
+      //   Old: product.category    = id  (subCategory field = null/unset)
+      filter.$or = [{ subCategory: id }, { category: id }];
+    }
   }
   if (query.brand) {
     const id = await resolveRefId(Brand, query.brand);

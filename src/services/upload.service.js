@@ -145,11 +145,16 @@ const VARIANT_WIDTHS = { thumbnail: 400, card: 800, full: 1600 };
 /**
  * Generate Sharp variants and upload alongside the original.
  * Returns `{ original, thumbnail, card, full }` URLs (always public).
+ *
+ * @param {string} originalKey  B2 object key of the already-uploaded original.
+ * @param {Buffer} [srcBuf]     Optional: in-memory buffer of the original.
+ *   Passing it avoids a redundant B2 GET — always prefer to supply it when
+ *   the caller already has the bytes (e.g. direct-upload path).
  */
-async function generateVariants(originalKey) {
+async function generateVariants(originalKey, srcBuf = null) {
   const sharp = getSharp();
-  // Pull the original. Range read up to 10MB cap (assertSize was already applied).
-  const buf = await b2.readRange(originalKey, fileVal.MAX_IMAGE_BYTES - 1);
+  // Re-use the supplied buffer if available; fall back to pulling from B2.
+  const buf = srcBuf || await b2.readRange(originalKey, fileVal.MAX_IMAGE_BYTES - 1);
   const urls = { original: cdn.publicUrl(originalKey) };
   for (const [name, width] of Object.entries(VARIANT_WIDTHS)) {
     // eslint-disable-next-line no-await-in-loop
@@ -280,7 +285,9 @@ async function uploadImageDirect({
   if (env.isTest) {
     urls = { original: cdn.publicUrl(fileKey) };
   } else {
-    urls = await generateVariants(fileKey);
+    // Pass the in-memory buffer so generateVariants doesn't need to re-download
+    // from B2 — avoids a redundant round-trip and eliminates a common failure point.
+    urls = await generateVariants(fileKey, buffer);
   }
 
   if (refId) {
