@@ -1,5 +1,7 @@
 const asyncHandler = require('../utils/asyncHandler');
 const uploadService = require('../services/upload.service');
+const b2 = require('../services/b2');
+const AppError = require('../utils/AppError');
 
 const presignProductFile = asyncHandler(async (req, res) => {
   const out = await uploadService.presignProductFile({
@@ -59,6 +61,26 @@ const uploadProductFileDirect = asyncHandler(async (req, res) => {
   res.status(201).json(out);
 });
 
+/**
+ * GET /uploads/proxy?key=ENCODED_KEY
+ * Public (no auth) — generates a short-lived signed B2 URL and redirects to it.
+ * Used when CDN_DOMAIN is not configured (local dev / self-hosted without CDN).
+ */
+const proxyImage = asyncHandler(async (req, res) => {
+  const { key } = req.query;
+  if (!key || typeof key !== 'string') {
+    throw AppError.badRequest('Missing or invalid key', 'NO_KEY');
+  }
+  // Restrict to image paths only — prevent this being used as an arbitrary B2 proxy.
+  if (!key.startsWith('images/')) {
+    throw AppError.badRequest('Key must start with images/', 'BAD_KEY');
+  }
+  const signedUrl = await b2.presignGetUrl({ key, expiresIn: 3600, attachment: false });
+  // Cache the redirect in the browser for 55 minutes (just under the 1-hour expiry).
+  res.setHeader('Cache-Control', 'private, max-age=3300');
+  return res.redirect(302, signedUrl);
+});
+
 module.exports = {
   presignProductFile,
   confirmProductFile,
@@ -66,4 +88,5 @@ module.exports = {
   confirmImage,
   uploadImageDirect,
   uploadProductFileDirect,
+  proxyImage,
 };

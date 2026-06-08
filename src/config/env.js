@@ -47,7 +47,10 @@ const schema = z.object({
   B2_REGION: z.string().default('us-east-005'),
   B2_ENDPOINT: z.string().default('https://s3.us-east-005.backblazeb2.com'),
   B2_ENDPOINT_HOST: z.string().default('s3.us-east-005.backblazeb2.com'),
-  CDN_DOMAIN: z.string().default('files.lexxus.com'),
+  CDN_DOMAIN: z.string().default(''),
+  // Public URL of this API server — used to build proxy image URLs when
+  // CDN_DOMAIN is not configured (local dev / self-hosted without CDN).
+  PUBLIC_API_URL: z.string().default('http://localhost:5050/api'),
 
   // Cloudflare — optional
   CF_ACCOUNT_ID: z.string().optional().default(''),
