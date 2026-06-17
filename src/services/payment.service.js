@@ -40,7 +40,11 @@ function getDefaultProvider() {
 
 function isProviderEnabled(provider) {
   switch (provider) {
-    case 'zoho':      return appConfig.get('payments.zohoEnabled')      !== false;
+    case 'zoho': {
+      if (appConfig.get('payments.zohoEnabled') === false) return false;
+      const z = appConfig.get('zoho') || {};
+      return !!(z.clientId && z.clientSecret && z.refreshToken);
+    }
     case 'stripe':    return appConfig.get('payments.stripeEnabled')    === true;
     case 'razorpay':  return appConfig.get('payments.razorpayEnabled')  === true;
     default:          return false;
@@ -607,6 +611,38 @@ async function handleRazorpayWebhookEvent(event) {
 async function getOrderStatus(user, orderId, { stripeSessionId } = {}) {
   const order = await Order.findOne({ _id: orderId, buyer: user._id });
   if (!order) throw AppError.notFound('Order not found');
+
+  // ── Zoho fallback for local dev (webhooks don't reach localhost) ──
+  // Query the Zoho payment session directly to check if it's been paid.
+  if (order.status === 'pending' && order.payment?.provider === 'zoho') {
+    const sessionId = order.payment?.zohoOrderId;
+    if (sessionId) {
+      try {
+        const session = await zoho.retrieveSession(sessionId);
+        const isPaid =
+          session?.status === 'paid' ||
+          session?.status === 'succeeded' ||
+          session?.payment_status === 'paid' ||
+          session?.payments_session_status === 'paid';
+        if (isPaid) {
+          logger.info('zoho: session paid (fallback verify)', { orderId, sessionId });
+          const paymentId = session?.payment_id || session?.payment?.payment_id || null;
+          await markPaid(order, { provider: 'zoho', paymentId });
+          const updated = await Order.findById(order._id);
+          return {
+            id: updated._id.toString(),
+            status: updated.status,
+            provider: 'zoho',
+            paidAt: updated.payment?.paidAt,
+            downloadToken: updated.status === 'paid' ? updated.downloadToken : null,
+            tokenExpiresAt: updated.tokenExpiresAt,
+          };
+        }
+      } catch (e) {
+        logger.warn('zoho: fallback session verify failed', { err: e.message, sessionId });
+      }
+    }
+  }
 
   // ── Stripe fallback for local dev (webhooks don't reach localhost) ──
   // If the order is still pending AND we have a Stripe session ID (either

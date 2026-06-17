@@ -32,6 +32,11 @@ const STATE_PREFIX = 'zoho:oauth:state:';
 const DEFAULT_SCOPE = 'ZohoPayments.fullaccess.all';
 
 function callbackUri() {
+  // In dev, use localhost so the state cache is reachable by the callback.
+  // Register http://localhost:<PORT>/api/zoho/callback in your Zoho app's allowed redirect URIs.
+  if (env.NODE_ENV === 'development') {
+    return `http://localhost:${env.PORT || 5050}/api/zoho/callback`;
+  }
   return `${env.API_URL}/api/zoho/callback`;
 }
 
@@ -176,9 +181,11 @@ router.get('/status', requireAuth, requireAdmin, status);
 router.post('/disconnect', requireAuth, requireAdmin, disconnect);
 router.post('/webhook-secret', requireAuth, requireAdmin, validate(webhookSecretSchema), setWebhookSecret);
 
-// Dev-only: initiate Zoho OAuth without requiring admin login.
-// Visit http://localhost:5050/api/zoho/dev-connect in a browser to start the flow.
+// Dev-only helpers — no auth required (development only).
 if (env.NODE_ENV === 'development') {
+  // GET /api/zoho/dev-connect — browser-friendly OAuth start page.
+  // Before using, register http://localhost:<PORT>/api/zoho/callback in your Zoho app's
+  // allowed redirect URIs (Zoho Developer Console → your app → Redirect URIs).
   router.get('/dev-connect', asyncHandler(async (_req, res) => {
     if (!env.ZOHO_CLIENT_ID || !env.ZOHO_CLIENT_SECRET) {
       return res.status(400).send('<h1>ZOHO_CLIENT_ID / ZOHO_CLIENT_SECRET not set in backend .env</h1>');
@@ -186,6 +193,7 @@ if (env.NODE_ENV === 'development') {
     const settings = await Settings.getSettings();
     const accountsHost = settings.integrations?.zoho?.accountsHost || 'https://accounts.zoho.in';
     const scope = DEFAULT_SCOPE;
+    const redirectUri = callbackUri(); // now points to localhost in dev
 
     const state = crypto.randomBytes(24).toString('hex');
     await cache.set(STATE_PREFIX + state, { userId: 'dev-setup', accountsHost, scope }, STATE_TTL_SECONDS);
@@ -194,18 +202,57 @@ if (env.NODE_ENV === 'development') {
       response_type: 'code',
       client_id: env.ZOHO_CLIENT_ID,
       scope,
-      redirect_uri: callbackUri(),
+      redirect_uri: redirectUri,
       access_type: 'offline',
       prompt: 'consent',
       state,
     });
     const authUrl = `${accountsHost}/oauth/v2/auth?${params.toString()}`;
 
-    res.send(`<!DOCTYPE html><html><head><title>Zoho OAuth Setup</title></head><body style="font-family:sans-serif;max-width:600px;margin:60px auto;padding:0 20px">
+    res.send(`<!DOCTYPE html>
+<html><head><title>Zoho OAuth Setup</title></head>
+<body style="font-family:sans-serif;max-width:640px;margin:60px auto;padding:0 24px;line-height:1.6">
 <h2>Zoho Payments OAuth Setup</h2>
-<p>Click the button below to authorize Lexxus to access Zoho Payments.</p>
-<p style="font-size:12px;color:#666">Callback URI: <code>${callbackUri()}</code><br>Make sure this is registered as an allowed redirect URI in your Zoho app settings.</p>
+<p><strong>Step 1 — Register the redirect URI in Zoho</strong><br>
+Go to <a href="https://accounts.zoho.in/developerconsole" target="_blank">Zoho Developer Console</a>,
+open your app, and add this as an authorized redirect URI:</p>
+<pre style="background:#f4f4f4;padding:10px;border-radius:4px">${redirectUri}</pre>
+<p><strong>Step 2 — Authorize</strong></p>
 <a href="${authUrl}" style="display:inline-block;background:#0066cc;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-size:16px">Connect Zoho Payments</a>
+<hr style="margin:40px 0">
+<p><strong>Alternative — paste refresh token directly</strong><br>
+If you already have a refresh token (e.g. from Zoho Self-Client), use the form below.</p>
+<form method="POST" action="/api/zoho/dev-set-token" style="display:flex;gap:8px;flex-wrap:wrap">
+  <input name="refreshToken" placeholder="Paste refresh token here" required
+    style="flex:1;min-width:200px;padding:10px;border:1px solid #ccc;border-radius:4px;font-size:14px">
+  <button type="submit" style="background:#333;color:#fff;padding:10px 20px;border:none;border-radius:4px;cursor:pointer;font-size:14px">Save token</button>
+</form>
+</body></html>`);
+  }));
+
+  // POST /api/zoho/dev-set-token — paste a refresh token directly (skips OAuth dance).
+  // Useful when using Zoho Self-Client to generate a token.
+  router.post('/dev-set-token', asyncHandler(async (req, res) => {
+    const refreshToken = (req.body?.refreshToken || '').trim();
+    if (!refreshToken) {
+      return res.status(400).send('<h1>refreshToken is required</h1>');
+    }
+    const settings = await Settings.getSettings();
+    settings.integrations = settings.integrations || {};
+    settings.integrations.zoho = {
+      ...(settings.integrations.zoho || {}),
+      refreshToken,
+      connectedAt: new Date(),
+    };
+    await settings.save();
+    await cache.del('zoho:access-token');
+    await appConfig.reload();
+    logger.info('zoho: refresh token set via dev-set-token');
+    res.send(`<!DOCTYPE html><html><head><title>Zoho Connected</title></head>
+<body style="font-family:sans-serif;max-width:500px;margin:60px auto;padding:0 24px">
+<h2>✓ Zoho Connected</h2>
+<p>Refresh token saved. Zoho Payments is now enabled on the checkout page.</p>
+<p><a href="/api/zoho/dev-connect">← Back</a></p>
 </body></html>`);
   }));
 }
