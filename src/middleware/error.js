@@ -59,6 +59,10 @@ function errorHandler(err, req, res, next) {
     status = 413;
     code = 'PAYLOAD_TOO_LARGE';
     message = 'Request body too large';
+  } else if (err.code === 'LIMIT_FILE_SIZE') {
+    status = 413;
+    code = 'FILE_TOO_LARGE';
+    message = 'File is too large. Maximum image size is 25 MB.';
   } else if (err.status && err.status < 500) {
     status = err.status;
     code = err.code || 'BAD_REQUEST';

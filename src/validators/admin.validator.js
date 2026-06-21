@@ -29,10 +29,10 @@ const dimensions = z
 const productCreate = z.object({
   title: z.string().trim().min(1).max(200),
   slug: z.string().trim().optional(),
-  description: z.string().min(1),
-  brand: objectId.optional(),
+  description: z.string().default(''),
+  brand: objectId.optional().nullable(),
   category: objectId,
-  subCategory: objectId.optional(),
+  subCategory: objectId.optional().nullable(),
   tags: z.array(z.string()).optional(),
   price: z.coerce.number().min(0),
   currency: z.string().optional(),

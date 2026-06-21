@@ -10,48 +10,54 @@ const logger = require('../config/logger');
 /* ────────── public availability probe ────────── */
 
 /**
- * Returns which provider is active and whether it's configured.
- * The checkout page uses this to decide whether to show Pay button.
+ * Returns which providers are available and enabled.
+ * Returns `providers` array (all enabled) plus single `provider` / `enabled`
+ * fields for backward-compat with old frontend code.
  * Never exposes credential material.
  */
 const available = asyncHandler(async (_req, res) => {
   const env = require('../config/env');
   if (env.PAYMENT_MOCK) {
-    return res.json({ enabled: true, provider: 'mock', reason: 'ok' });
-  }
-
-  const provider = paymentService.getDefaultProvider();
-
-  if (provider === 'stripe') {
-    const sk = appConfig.get('stripe.secretKey');
-    const enabled = !!sk && paymentService.isProviderEnabled('stripe');
-    return res.json({ enabled, provider: 'stripe', reason: enabled ? 'ok' : 'CREDENTIALS_MISSING' });
-  }
-
-  if (provider === 'razorpay') {
-    const keyId = appConfig.get('razorpay.keyId');
-    const keySecret = appConfig.get('razorpay.keySecret');
-    const enabled = !!(keyId && keySecret) && paymentService.isProviderEnabled('razorpay');
     return res.json({
-      enabled,
-      provider: 'razorpay',
-      reason: enabled ? 'ok' : 'CREDENTIALS_MISSING',
-      // Public keyId is safe to expose — needed by frontend widget.
-      ...(enabled ? { keyId } : {}),
+      enabled: true,
+      provider: 'mock',
+      reason: 'ok',
+      providers: [{ id: 'mock', label: 'Mock (dev)', enabled: true }],
     });
   }
 
-  // Default: Zoho
+  const providers = [];
+
+  // ── Stripe ──────────────────────────────────────────────
+  const sk = appConfig.get('stripe.secretKey');
+  if (sk && paymentService.isProviderEnabled('stripe')) {
+    providers.push({ id: 'stripe', label: 'Stripe', enabled: true });
+  }
+
+  // ── Zoho ─────────────────────────────────────────────────
   const z = appConfig.get('zoho') || {};
-  const ready = !!(z.clientId && z.clientSecret && z.refreshToken);
+  const zohoReady = !!(z.clientId && z.clientSecret && z.refreshToken);
+  if (zohoReady) {
+    providers.push({ id: 'zoho', label: 'Zoho Payments', enabled: true });
+  }
+
+  // ── Razorpay ─────────────────────────────────────────────
+  const rzpKeyId = appConfig.get('razorpay.keyId');
+  const rzpSecret = appConfig.get('razorpay.keySecret');
+  if (rzpKeyId && rzpSecret && paymentService.isProviderEnabled('razorpay')) {
+    providers.push({ id: 'razorpay', label: 'Razorpay', enabled: true, keyId: rzpKeyId });
+  }
+
+  // Active provider: prefer env/db default if it's enabled, else first enabled.
+  const defaultProv = paymentService.getDefaultProvider();
+  const activeProvider =
+    providers.find((p) => p.id === defaultProv)?.id || providers[0]?.id || defaultProv;
+
   return res.json({
-    enabled: ready,
-    provider: 'zoho',
-    reason: ready
-      ? 'ok'
-      : !z.clientId || !z.clientSecret
-        ? 'CREDENTIALS_MISSING'
-        : 'NOT_CONNECTED',
+    enabled: providers.length > 0,
+    provider: activeProvider,
+    reason: providers.length > 0 ? 'ok' : 'CREDENTIALS_MISSING',
+    providers,
   });
 });
 

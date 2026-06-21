@@ -5,7 +5,7 @@
  */
 
 const MAX_ZIP_BYTES = 2 * 1024 * 1024 * 1024; // 2 GB
-const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10 MB
+const MAX_IMAGE_BYTES = 25 * 1024 * 1024; // 25 MB
 
 const ZIP_MIMES = new Set([
   'application/zip',

@@ -4,7 +4,7 @@ const { Product } = require('../../models');
 const audit = require('../../services/audit.service');
 const invalidate = require('../../services/invalidation.service');
 
-const POPULATE = ['brand', 'category'];
+const POPULATE = ['brand', 'category', 'subCategory'];
 
 const list = asyncHandler(async (req, res) => {
   const filter = {};

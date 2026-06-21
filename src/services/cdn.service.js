@@ -17,8 +17,14 @@ const b2 = require('./b2');
 function publicUrl(key) {
   if (!key) return null;
   const b2c = appConfig.get('b2') || {};
+  // If a CDN domain is configured, use it directly (Cloudflare / other CDN).
   if (b2c.cdnDomain) return `https://${b2c.cdnDomain}/${encodeURI(key)}`;
-  return `${b2c.endpoint}/${b2c.bucketName}/${encodeURI(key)}`;
+  // No CDN — proxy through the backend, which generates a signed B2 URL on
+  // the fly. This keeps private-bucket images accessible in local dev and
+  // self-hosted deployments without a CDN.
+  const env = require('../config/env');
+  const apiBase = (env.PUBLIC_API_URL || 'http://localhost:5050/api').replace(/\/$/, '');
+  return `${apiBase}/uploads/proxy?key=${encodeURIComponent(key)}`;
 }
 
 /** Time-limited signed URL (used for paid downloads + admin previews). */

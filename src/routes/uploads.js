@@ -17,6 +17,11 @@ const zipUpload = multer({
   limits: { fileSize: fileVal.MAX_ZIP_BYTES },
 });
 
+// ── Public proxy (no auth) ─────────────────────────────────────────────────
+// Generates a short-lived signed B2 URL and redirects. Used when CDN_DOMAIN
+// is not configured so uploaded images are still viewable in the browser.
+router.get('/proxy', ctrl.proxyImage);
+
 router.use(requireAuth);
 
 // Product ZIP file — only creators or admins

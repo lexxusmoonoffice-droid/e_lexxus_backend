@@ -76,20 +76,29 @@ async function getTreeWithPreviews() {
       const roots = byParent.get('root') || [];
 
       // Fetch preview products for all subcategories in one query.
+      // Two storage formats exist:
+      //   New: product.category = parentId, product.subCategory = subId
+      //   Old: product.category = subId (subcategory used directly), no subCategory field
       const subIds = all.filter((c) => c.parent).map((c) => c._id);
       const previewProducts = subIds.length
-        ? await Product.find({ category: { $in: subIds }, status: 'published' })
-            .select('category title thumbnail price')
+        ? await Product.find({
+            $or: [{ subCategory: { $in: subIds } }, { category: { $in: subIds } }],
+            status: 'published',
+          })
+            .select('category subCategory title slug thumbnail price')
             .sort('-publishedAt')
             .lean()
         : [];
 
       const previewsByCategory = new Map();
       for (const p of previewProducts) {
-        const k = p.category.toString();
+        // Use subCategory if set (new format), else fall back to category (old format)
+        const subId = p.subCategory || p.category;
+        if (!subId) continue;
+        const k = subId.toString();
         if (!previewsByCategory.has(k)) previewsByCategory.set(k, []);
         const arr = previewsByCategory.get(k);
-        if (arr.length < 4) arr.push(p);
+        if (arr.length < 3) arr.push(p);
       }
 
       return roots.map((top) => ({

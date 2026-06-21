@@ -23,7 +23,7 @@ const productSchema = new Schema(
     creator: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     title: { type: String, required: true, trim: true, maxlength: 200 },
     slug: { type: String, required: true, unique: true, lowercase: true, index: true },
-    description: { type: String, required: true },
+    description: { type: String, default: '' },
     brand: { type: Schema.Types.ObjectId, ref: 'Brand', index: true },
     category: { type: Schema.Types.ObjectId, ref: 'Category', required: true, index: true },
     subCategory: { type: Schema.Types.ObjectId, ref: 'Category' },

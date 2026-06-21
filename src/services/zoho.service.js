@@ -164,6 +164,29 @@ async function createCheckoutSession({ amount, currency = 'INR', description, re
 }
 
 /**
+ * Retrieve a payment session to check its current status.
+ * Used as a fallback for local dev where webhooks can't reach localhost.
+ * Returns the raw session object or null on any failure.
+ */
+async function retrieveSession(sessionId) {
+  const accountId = getAccountId();
+  if (!accountId || !sessionId) return null;
+  try {
+    const token = await getAccessToken();
+    const res = await fetch(
+      `${getApiBase()}/paymentsessions/${encodeURIComponent(sessionId)}?account_id=${encodeURIComponent(accountId)}`,
+      { headers: { Authorization: `Zoho-oauthtoken ${token}` } },
+    );
+    if (!res.ok) return null;
+    const json = await res.json().catch(() => null);
+    if (!json) return null;
+    return json.payments_session || json.payment_session || json;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Refund a payment. Zoho returns a refund object.
  */
 async function refundPayment({ paymentId, amount, reason }) {
@@ -219,6 +242,7 @@ module.exports = {
   exchangeCodeForTokens,
   getStoredRefreshToken,
   getStoredWebhookSecret,
+  retrieveSession,
   createCheckoutSession,
   refundPayment,
   verifyWebhookSignature,
