@@ -17,6 +17,13 @@ const heroSlideSchema = new Schema(
     cta: String,
     href: String,
     accent: String,
+    styles: {
+      tagSize:    { type: Number },
+      titleSize:  { type: Number },
+      subSize:    { type: Number },
+      ctaSize:    { type: Number },
+      accentSize: { type: Number },
+    },
   },
   { timestamps: true },
 );

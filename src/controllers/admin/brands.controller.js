@@ -3,6 +3,7 @@ const AppError = require('../../utils/AppError');
 const { Brand } = require('../../models');
 const audit = require('../../services/audit.service');
 const invalidate = require('../../services/invalidation.service');
+const storage = require('../../services/storageCleanup.service');
 
 const list = asyncHandler(async (req, res) => {
   const filter = {};
@@ -38,8 +39,13 @@ const update = asyncHandler(async (req, res) => {
 });
 
 const remove = asyncHandler(async (req, res) => {
-  const brand = await Brand.findByIdAndDelete(req.params.id);
+  const brand = await Brand.findById(req.params.id);
   if (!brand) throw AppError.notFound('Brand not found');
+  await Promise.allSettled([
+    storage.deleteSingleImage(brand.logo),
+    storage.deleteSingleImage(brand.hero),
+  ]);
+  await brand.deleteOne();
   await audit.logAction(req, 'brand.delete', 'Brand', brand._id, { before: brand.toJSON() });
   await invalidate.brands();
   res.status(204).end();

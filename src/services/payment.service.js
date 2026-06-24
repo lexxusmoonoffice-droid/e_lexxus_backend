@@ -315,10 +315,17 @@ async function createOrder({ user, billing, ip, userAgent, idempotencyKey, provi
       result = await _createZohoOrder(order, user, gatewayAmount);
     }
   } catch (err) {
-    logger.error(`${provider}.createOrder failed`, { message: err.message });
+    logger.error(`${provider}.createOrder failed`, { message: err.message, code: err.code });
     await Order.deleteOne({ _id: order._id }).catch(() => {});
     if (/not configured/i.test(err.message)) {
       throw new AppError('Payments are not configured yet. Please contact support.', 503, 'PAYMENTS_UNAVAILABLE');
+    }
+    if (err.code === 'ZOHO_UNAUTHORIZED') {
+      throw new AppError(
+        'Zoho Payments is not yet activated. Please complete KYC verification at payments.zoho.in, then try again.',
+        503,
+        'ZOHO_KYC_PENDING',
+      );
     }
     const detail = env.NODE_ENV === 'development' ? ` (${err.message})` : '';
     throw new AppError(`We could not start your payment. Please try again.${detail}`, 502, 'PAYMENT_GATEWAY_ERROR');
@@ -619,14 +626,24 @@ async function getOrderStatus(user, orderId, { stripeSessionId } = {}) {
     if (sessionId) {
       try {
         const session = await zoho.retrieveSession(sessionId);
+        // Z-5 FIX: Zoho Payments India uses "completed" (not "paid") for a paid session.
         const isPaid =
+          session?.payments_session_status === 'completed' ||
+          session?.payments_session_status === 'paid' ||
+          session?.status === 'completed' ||
           session?.status === 'paid' ||
           session?.status === 'succeeded' ||
           session?.payment_status === 'paid' ||
-          session?.payments_session_status === 'paid';
+          session?.payment_status === 'completed';
         if (isPaid) {
           logger.info('zoho: session paid (fallback verify)', { orderId, sessionId });
-          const paymentId = session?.payment_id || session?.payment?.payment_id || null;
+          // Z-11 FIX: payment_id may be nested in payments array.
+          const paymentId =
+            session?.payment_id ||
+            session?.payment?.payment_id ||
+            (Array.isArray(session?.payments) ? session.payments[0]?.payment_id : null) ||
+            session?.payment_details?.payment_id ||
+            null;
           await markPaid(order, { provider: 'zoho', paymentId });
           const updated = await Order.findById(order._id);
           return {

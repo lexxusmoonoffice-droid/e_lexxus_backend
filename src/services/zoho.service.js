@@ -4,7 +4,7 @@
  *
  *   - Access tokens cached for ~1h (Zoho's typical lifetime).
  *   - Webhook payloads must be HMAC-SHA256 signed with
- *     `ZOHO_WEBHOOK_SECRET`. Always verify before trusting.
+ *     `ZOHO_SIGNING_KEY`. Always verify before trusting.
  *
  * The HTTP layer uses native `fetch` (Node 18+). Tests mock with `nock`.
  */
@@ -30,6 +30,8 @@ function getAccountId() { return appConfig.get('zoho.accountId') || process.env.
 
 /* ────────── OAuth ────────── */
 
+// Z-13 FIX: send OAuth params in POST body (not URL query string) to avoid
+// leaking client_secret in server/proxy access logs.
 async function refreshAccessToken() {
   const refreshToken = getStoredRefreshToken();
   const clientId = getClientId();
@@ -38,13 +40,17 @@ async function refreshAccessToken() {
     throw new Error('Zoho credentials not configured');
   }
   const host = getAccountsHost();
-  const url =
-    `${host}/oauth/v2/token?grant_type=refresh_token` +
-    `&client_id=${encodeURIComponent(clientId)}` +
-    `&client_secret=${encodeURIComponent(clientSecret)}` +
-    `&refresh_token=${encodeURIComponent(refreshToken)}`;
-
-  const res = await fetch(url, { method: 'POST' });
+  const body = new URLSearchParams({
+    grant_type: 'refresh_token',
+    client_id: clientId,
+    client_secret: clientSecret,
+    refresh_token: refreshToken,
+  });
+  const res = await fetch(`${host}/oauth/v2/token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: body.toString(),
+  });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     throw new Error(`Zoho OAuth failed: ${res.status} ${text}`);
@@ -57,6 +63,11 @@ async function refreshAccessToken() {
 }
 
 async function getAccessToken() {
+  // If a direct API key is configured, use it — no OAuth refresh needed.
+  // Get the API key from: payments.zoho.in → Settings → Developers → API Keys
+  const apiKey = appConfig.get('zoho.apiKey');
+  if (apiKey) return apiKey;
+  // Fall back to OAuth refresh-token flow
   return cache.wrap(ACCESS_TOKEN_KEY, TOKEN_TTL_SECONDS, refreshAccessToken);
 }
 
@@ -64,6 +75,7 @@ async function getAccessToken() {
  * Exchange an authorization code for access + refresh tokens. Called
  * by the OAuth callback endpoint. Returns the full Zoho response so
  * the caller can persist the refresh token.
+ * Z-13 FIX: params in POST body, not URL query string.
  */
 async function exchangeCodeForTokens({ code, redirectUri, host }) {
   const clientId = getClientId();
@@ -72,13 +84,18 @@ async function exchangeCodeForTokens({ code, redirectUri, host }) {
     throw new Error('Zoho client id/secret not configured');
   }
   const accountsHost = host || getAccountsHost();
-  const url =
-    `${accountsHost}/oauth/v2/token?grant_type=authorization_code` +
-    `&client_id=${encodeURIComponent(clientId)}` +
-    `&client_secret=${encodeURIComponent(clientSecret)}` +
-    `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-    `&code=${encodeURIComponent(code)}`;
-  const res = await fetch(url, { method: 'POST' });
+  const body = new URLSearchParams({
+    grant_type: 'authorization_code',
+    client_id: clientId,
+    client_secret: clientSecret,
+    redirect_uri: redirectUri,
+    code,
+  });
+  const res = await fetch(`${accountsHost}/oauth/v2/token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: body.toString(),
+  });
   const json = await res.json().catch(() => ({}));
   if (!res.ok || !json.refresh_token) {
     const err = new Error(`Zoho authorization-code exchange failed: ${res.status} ${JSON.stringify(json)}`);
@@ -93,8 +110,8 @@ async function exchangeCodeForTokens({ code, redirectUri, host }) {
 
 /**
  * Create a hosted payment session via the Zoho Payments India API.
- * Correct endpoint: POST /api/v1/paymentsessions?account_id={id}
- * Returns { sessionId, accessKey } — frontend widget uses these.
+ * Endpoint: POST /api/v1/paymentsessions?account_id={id}
+ * Returns { sessionId, accessKey, paymentUrl }.
  */
 async function createCheckoutSession({ amount, currency = 'INR', description, referenceId, redirectUrl, cancelUrl, customer }) {
   const token = await getAccessToken();
@@ -102,18 +119,25 @@ async function createCheckoutSession({ amount, currency = 'INR', description, re
   if (!accountId) throw new Error('Zoho account_id not configured (set ZOHO_ACCOUNT_ID in .env)');
 
   const apiUrl = `${getApiBase()}/paymentsessions?account_id=${encodeURIComponent(accountId)}`;
-  // Zoho requires HTTPS for success/failure URLs — swap http→https.
-  // Localhost/non-routable hosts are rejected by Zoho; reroute to the canonical frontend.
+
+  // Z-3 FIX: use ZOHO_PUBLIC_FRONTEND_URL (e.g. ngrok URL) as canonical base when set.
+  // In production set FRONTEND_URL to the real domain — no extra var needed.
+  // In dev, run: ngrok http 3000  →  set ZOHO_PUBLIC_FRONTEND_URL=https://abc.ngrok.io
   const env = require('../config/env');
-  const canonicalBase = (env.FRONTEND_URL || '').replace(/^http:\/\//i, 'https://').replace(/\/$/, '');
-  const toHttps = (url) => {
+  const publicBase = (
+    env.ZOHO_PUBLIC_FRONTEND_URL ||
+    env.FRONTEND_URL ||
+    ''
+  ).replace(/\/$/, '');
+
+  const toPublicHttps = (url) => {
     if (!url) return url;
-    const httpsUrl = url.replace(/^http:\/\//i, 'https://');
-    if (/https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0)(:|\/|$)/i.test(httpsUrl)) {
-      // Replace localhost origin with the public frontend URL
-      return httpsUrl.replace(/https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?/i, canonicalBase);
+    // If publicBase is a real public HTTPS URL, replace the origin of any localhost URL.
+    if (publicBase && !/localhost|127\.0\.0\.1|0\.0\.0\.0/i.test(publicBase)) {
+      return url.replace(/https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?/i, publicBase);
     }
-    return httpsUrl;
+    // Fallback: just upgrade to https (may still be rejected by Zoho in dev).
+    return url.replace(/^http:\/\//i, 'https://');
   };
 
   const pageDescription = description
@@ -123,22 +147,23 @@ async function createCheckoutSession({ amount, currency = 'INR', description, re
   const body = {
     amount: Number(amount.toFixed(2)), // decimal rupees, e.g. 100.00
     currency,
-    description: pageDescription, // top-level: required, max 500 chars
+    description: pageDescription,
     max_retry_count: 3,
     configurations: {
       hosted_page_parameters: {
-        description: pageDescription, // hosted page: also required
-        ...(customer?.name ? { name: customer.name } : {}),
+        description: pageDescription,
+        ...(customer?.name  ? { name:  customer.name  } : {}),
         ...(customer?.email ? { email: customer.email } : {}),
-        phone_country_code: 'IN',
-        success_url: toHttps(redirectUrl), // must be HTTPS
-        failure_url: toHttps(cancelUrl),   // must be HTTPS
+        // Z-12 FIX: only include phone_country_code when a phone number is provided.
+        ...(customer?.phone ? { phone: customer.phone, phone_country_code: 'IN' } : {}),
+        success_url: toPublicHttps(redirectUrl),
+        failure_url: toPublicHttps(cancelUrl),
         ...(referenceId ? { udf1: referenceId } : {}),
       },
     },
   };
 
-  logger.info('zoho.createCheckoutSession request', { url: apiUrl, amount, currency });
+  logger.info('zoho.createCheckoutSession request', { url: apiUrl, amount, currency, success_url: body.configurations.hosted_page_parameters.success_url });
   const res = await fetch(apiUrl, {
     method: 'POST',
     headers: {
@@ -150,15 +175,37 @@ async function createCheckoutSession({ amount, currency = 'INR', description, re
   const text = await res.text().catch(() => '');
   logger.info('zoho.createCheckoutSession response', { status: res.status, body: text.slice(0, 500) });
   if (!res.ok) {
+    // 401 "Not An Authorized User" means the Zoho Payments account KYC is not yet complete
+    // or the account_id doesn't match the authenticated user's organization.
+    if (res.status === 401 || res.status === 403) {
+      // Flag so the /available endpoint can report KYC_PENDING to the frontend.
+      appConfig.setKycPending(true);
+      const err = new Error('Zoho Payments account not activated (KYC pending or unauthorized)');
+      err.zohoStatus = res.status;
+      err.zohoBody = text;
+      err.code = 'ZOHO_UNAUTHORIZED';
+      throw err;
+    }
     throw new Error(`Zoho session creation failed: ${res.status} ${text}`);
   }
   const json = JSON.parse(text);
-  // Response: { code: 0, message: "success", payments_session: { payments_session_id, access_key, ... } }
-  const session = json.payments_session || json;
+  // Response: { code: 0, message: "success", payments_session: { payments_session_id, access_key, redirect_url, ... } }
+  const session = json.payments_session || json.payment_session;
+  if (!session) {
+    throw new Error(`Zoho unexpected response shape: ${text.slice(0, 300)}`);
+  }
+  // Z-4 FIX: Zoho Payments India returns the hosted page URL as `redirect_url`, not `payment_url`.
+  const paymentUrl =
+    session.redirect_url ||
+    session.payment_link ||
+    session.hosted_page_url ||
+    session.payment_url ||
+    null;
+
   return {
     sessionId: session.payments_session_id || session.session_id || session.id,
     accessKey: session.access_key || null,
-    paymentUrl: session.payment_url || null, // may be null for widget flow
+    paymentUrl,
     raw: json,
   };
 }
@@ -166,7 +213,7 @@ async function createCheckoutSession({ amount, currency = 'INR', description, re
 /**
  * Retrieve a payment session to check its current status.
  * Used as a fallback for local dev where webhooks can't reach localhost.
- * Returns the raw session object or null on any failure.
+ * Z-6 FIX: never returns the outer envelope — returns null if shape is unrecognized.
  */
 async function retrieveSession(sessionId) {
   const accountId = getAccountId();
@@ -180,7 +227,12 @@ async function retrieveSession(sessionId) {
     if (!res.ok) return null;
     const json = await res.json().catch(() => null);
     if (!json) return null;
-    return json.payments_session || json.payment_session || json;
+    const session = json.payments_session || json.payment_session;
+    if (!session) {
+      logger.warn('zoho.retrieveSession: unrecognized response shape', { keys: Object.keys(json) });
+      return null;
+    }
+    return session;
   } catch {
     return null;
   }
@@ -197,8 +249,6 @@ async function refundPayment({ paymentId, amount, reason }) {
       Authorization: `Zoho-oauthtoken ${token}`,
       'Content-Type': 'application/json',
     },
-    // C-4 FIX: Zoho Payments India uses decimal rupees throughout (same as
-    // createCheckoutSession). Sending paise (×100) would charge 100× too much.
     body: JSON.stringify({ amount: Number(amount.toFixed(2)), reason }),
   });
   if (!res.ok) {
@@ -212,25 +262,24 @@ async function refundPayment({ paymentId, amount, reason }) {
 
 /**
  * Verify a Zoho webhook signature in constant time.
- * Zoho signs payloads with the Signing Key (from Developer Space).
- * `rawBody` must be the exact bytes Zoho sent (Buffer or string).
- * Falls back to webhook secret if signing key not configured.
+ * Z-8 FIX: strip optional "sha256=" prefix Zoho may prepend to the signature.
  */
 async function verifyWebhookSignature(rawBody, signature) {
-  // Prefer Signing Key (from Developer Space > Authentication Keys)
   const secret = getStoredSigningKey() || getStoredWebhookSecret();
   if (!secret) {
     logger.warn('Zoho signing key not configured — rejecting webhook');
     return false;
   }
   if (!signature || typeof signature !== 'string') return false;
+  // Z-8 FIX: strip "sha256=" prefix if present.
+  const normalizedSig = signature.replace(/^sha256=/i, '');
   const expected = crypto
     .createHmac('sha256', secret)
     .update(rawBody)
     .digest('hex');
-  if (expected.length !== signature.length) return false;
+  if (expected.length !== normalizedSig.length) return false;
   try {
-    return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
+    return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(normalizedSig));
   } catch {
     return false;
   }

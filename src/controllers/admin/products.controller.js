@@ -3,6 +3,7 @@ const AppError = require('../../utils/AppError');
 const { Product } = require('../../models');
 const audit = require('../../services/audit.service');
 const invalidate = require('../../services/invalidation.service');
+const storage = require('../../services/storageCleanup.service');
 
 const POPULATE = ['brand', 'category', 'subCategory'];
 
@@ -65,8 +66,11 @@ const patchStatus = asyncHandler(async (req, res) => {
 });
 
 const remove = asyncHandler(async (req, res) => {
-  const product = await Product.findByIdAndDelete(req.params.id);
+  const product = await Product.findById(req.params.id);
   if (!product) throw AppError.notFound('Product not found');
+  // Clean up B2 files before removing the DB record
+  await storage.deleteProductFiles(product);
+  await product.deleteOne();
   await audit.logAction(req, 'product.delete', 'Product', product._id, {
     before: product.toJSON(),
   });
@@ -82,6 +86,9 @@ const bulk = asyncHandler(async (req, res) => {
   } else if (action === 'unpublish') {
     result = await Product.updateMany({ _id: { $in: ids } }, { $set: { status: 'draft' } });
   } else if (action === 'delete') {
+    // Fetch all products first so we can clean up their B2 files
+    const products = await Product.find({ _id: { $in: ids } }, 'file thumbnail hoverImage images');
+    await Promise.allSettled(products.map((p) => storage.deleteProductFiles(p)));
     result = await Product.deleteMany({ _id: { $in: ids } });
   }
   await audit.logAction(req, `product.bulk.${action}`, 'Product', null, { after: { ids, result } });
