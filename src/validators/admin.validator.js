@@ -139,6 +139,13 @@ const heroUpsert = z.object({
   cta: z.string().optional(),
   href: z.string().optional(),
   accent: z.string().optional(),
+  styles: z.object({
+    tagSize:    z.coerce.number().min(8).max(24).optional(),
+    titleSize:  z.coerce.number().min(1).max(12).optional(),
+    subSize:    z.coerce.number().min(10).max(36).optional(),
+    ctaSize:    z.coerce.number().min(8).max(24).optional(),
+    accentSize: z.coerce.number().min(8).max(24).optional(),
+  }).optional(),
 });
 const heroReorder = z.object({ ids: z.array(objectId).min(1) });
 

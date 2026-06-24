@@ -34,11 +34,19 @@ const available = asyncHandler(async (_req, res) => {
     providers.push({ id: 'stripe', label: 'Stripe', enabled: true });
   }
 
-  // ── Zoho ─────────────────────────────────────────────────
+  // ── Zoho — show whenever clientId is set, enabled only when fully connected ──
   const z = appConfig.get('zoho') || {};
-  const zohoReady = !!(z.clientId && z.clientSecret && z.refreshToken);
-  if (zohoReady) {
-    providers.push({ id: 'zoho', label: 'Zoho Payments', enabled: true });
+  const zohoHasCredentials = !!(z.clientId && z.clientSecret);
+  const zohoReady = !!(zohoHasCredentials && z.refreshToken);
+  // Track whether Zoho API is actually reachable (set to false if last call returned ZOHO_UNAUTHORIZED)
+  const zohoKycPending = !!appConfig.get('zoho._kycPending');
+  if (zohoHasCredentials) {
+    providers.push({
+      id: 'zoho',
+      label: 'Zoho Payments',
+      enabled: zohoReady && !zohoKycPending,
+      reason: !zohoReady ? 'NOT_CONNECTED' : zohoKycPending ? 'KYC_PENDING' : 'ok',
+    });
   }
 
   // ── Razorpay ─────────────────────────────────────────────
@@ -94,7 +102,9 @@ const cancelOrder = asyncHandler(async (req, res) => {
 /* ────────── Zoho webhook ────────── */
 
 const webhookZoho = asyncHandler(async (req, res) => {
+  // Z-7 FIX: Zoho Payments India sends the HMAC in 'x-zoho-payments-signature'.
   const signature =
+    req.headers['x-zoho-payments-signature'] ||
     req.headers['x-zoho-signature'] ||
     req.headers['x-webhook-signature'] ||
     req.headers['x-signature'];

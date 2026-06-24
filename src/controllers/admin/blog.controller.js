@@ -3,6 +3,7 @@ const AppError = require('../../utils/AppError');
 const { BlogPost } = require('../../models');
 const audit = require('../../services/audit.service');
 const invalidate = require('../../services/invalidation.service');
+const storage = require('../../services/storageCleanup.service');
 
 const list = asyncHandler(async (req, res) => {
   const filter = {};
@@ -42,8 +43,10 @@ const update = asyncHandler(async (req, res) => {
 });
 
 const remove = asyncHandler(async (req, res) => {
-  const post = await BlogPost.findByIdAndDelete(req.params.id);
+  const post = await BlogPost.findById(req.params.id);
   if (!post) throw AppError.notFound('Post not found');
+  await storage.deleteSingleImage(post.image);
+  await post.deleteOne();
   await audit.logAction(req, 'blog.delete', 'BlogPost', post._id, { before: post.toJSON() });
   await invalidate.blog();
   res.status(204).end();

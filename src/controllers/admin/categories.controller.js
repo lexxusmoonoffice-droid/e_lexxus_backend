@@ -3,6 +3,7 @@ const AppError = require('../../utils/AppError');
 const { Category, Product } = require('../../models');
 const audit = require('../../services/audit.service');
 const invalidate = require('../../services/invalidation.service');
+const storage = require('../../services/storageCleanup.service');
 
 const list = asyncHandler(async (req, res) => {
   const result = await Category.paginate({}, {
@@ -56,6 +57,7 @@ const remove = asyncHandler(async (req, res) => {
     throw AppError.badRequest(`Cannot delete — ${productCount} product${productCount === 1 ? ' is' : 's are'} assigned to this category.`);
   }
 
+  await storage.deleteSingleImage(category.image);
   await category.deleteOne();
   await audit.logAction(req, 'category.delete', 'Category', category._id, { before: category.toJSON() });
   await invalidate.categories();

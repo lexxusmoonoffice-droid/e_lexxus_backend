@@ -65,6 +65,11 @@ const schema = z.object({
   ZOHO_ACCOUNT_ID: z.string().optional().default(''),
   ZOHO_API_KEY: z.string().optional().default(''),
   ZOHO_SIGNING_KEY: z.string().optional().default(''),
+  // Public-facing frontend URL used for Zoho success/failure redirect URLs.
+  // Must be HTTPS and publicly reachable (not localhost).
+  // In dev: run `ngrok http 3000` and set this to the ngrok URL.
+  // In prod: leave blank — FRONTEND_URL is used automatically.
+  ZOHO_PUBLIC_FRONTEND_URL: z.string().optional().default(''),
 
   // SMTP — optional until Phase 10
   SMTP_HOST: z.string().default('smtp.zoho.com'),

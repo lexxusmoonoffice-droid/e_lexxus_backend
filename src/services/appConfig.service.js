@@ -32,6 +32,7 @@ function mergeBoolean(db, fallback) {
 }
 
 async function reload() {
+  _kycPending = false; // clear on reconnect
   // Pull the Settings singleton with every select:false field included.
   const { Settings } = require('../models');
   const doc = await Settings.findOne(
@@ -138,7 +139,15 @@ async function reloadFromEnvOnly() {
   }
 }
 
+// Runtime flag set by zoho.service when the Payments API returns 401/403.
+// Cleared on appConfig.reload() (i.e. when a new refresh token is saved).
+let _kycPending = false;
+
+function setKycPending(v) { _kycPending = !!v; }
+
 function get(path) {
+  // Allow reading the live KYC flag
+  if (path === 'zoho._kycPending') return _kycPending;
   if (!cached) {
     // Synchronous fallback — let callers work even before init() finishes.
     // Once init() lands, subsequent reads see DB values.
@@ -219,4 +228,4 @@ function snapshotForAdmin() {
   };
 }
 
-module.exports = { init, reload, get, current, snapshotForAdmin };
+module.exports = { init, reload, get, current, snapshotForAdmin, setKycPending };

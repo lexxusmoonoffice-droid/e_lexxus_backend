@@ -123,8 +123,15 @@ const callback = asyncHandler(async (req, res) => {
 
   logger.info('zoho: connected', { by: ctx.userId });
 
-  if (env.NODE_ENV === 'development' && req.query._dev) {
-    return res.send('<h1>Zoho Connected!</h1><p>Refresh token saved. Payments are now enabled. You can close this tab.</p>');
+  if (env.NODE_ENV === 'development') {
+    return res.send(`<!DOCTYPE html><html><head><title>Zoho Connected</title></head>
+<body style="font-family:sans-serif;max-width:540px;margin:80px auto;padding:0 24px;text-align:center">
+<div style="font-size:64px">✅</div>
+<h2 style="color:#1a7f1a">Zoho Payments Connected!</h2>
+<p>Refresh token saved to database. Zoho Payments is now enabled on your checkout page.</p>
+<p style="color:#666;font-size:14px">You can close this tab and go test the checkout at<br>
+<a href="http://localhost:3000/checkout">http://localhost:3000/checkout</a></p>
+</body></html>`);
   }
   return res.redirect(adminUrl('/integrations?zoho=connected'));
 });
