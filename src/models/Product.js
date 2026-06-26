@@ -46,7 +46,7 @@ const productSchema = new Schema(
     status: {
       type: String,
       enum: ['draft', 'review', 'published', 'removed'],
-      default: 'draft',
+      default: 'published',
       index: true,
     },
     publishedAt: Date,
