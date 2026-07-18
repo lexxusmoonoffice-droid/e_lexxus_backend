@@ -22,6 +22,7 @@ const {
   HeroSlide,
   Product,
   Settings,
+  SocialLink,
   User,
 } = require('../src/models');
 
@@ -42,8 +43,8 @@ async function seedUsers() {
           verified: u.verified,
           bio: u.bio,
           status: 'active',
+          passwordHash,
         },
-        $set: { passwordHash },
       },
       { upsert: true, new: true },
     );
@@ -59,7 +60,7 @@ async function seedCategories() {
   for (const c of fixtures.categories.filter((x) => !x.parent)) {
     const doc = await Category.findOneAndUpdate(
       { slug: c.slug },
-      { $set: { name: c.name, slug: c.slug, status: 'active' } },
+      { $set: { name: c.name, slug: c.slug, banners: c.banners || [], status: 'active' } },
       { upsert: true, new: true },
     );
     map[c.slug] = doc;
@@ -69,7 +70,7 @@ async function seedCategories() {
     const parent = map[c.parent];
     const doc = await Category.findOneAndUpdate(
       { slug: c.slug },
-      { $set: { name: c.name, slug: c.slug, parent: parent?._id, status: 'active' } },
+      { $set: { name: c.name, slug: c.slug, parent: parent?._id, banners: c.banners || [], status: 'active' } },
       { upsert: true, new: true },
     );
     map[c.slug] = doc;
@@ -213,8 +214,28 @@ async function seedSettings() {
   console.log('  · settings ensured');
 }
 
+async function seedSocialLinks() {
+  const defaultLinks = [
+    { platform: 'linkedin', url: 'https://linkedin.com', active: true, order: 0 },
+    { platform: 'facebook', url: 'https://facebook.com', active: true, order: 1 },
+    { platform: 'youtube', url: 'https://youtube.com', active: true, order: 2 },
+    { platform: 'instagram', url: 'https://instagram.com', active: true, order: 3 },
+    { platform: 'twitter', url: 'https://twitter.com', active: true, order: 4 },
+  ];
+  let n = 0;
+  for (const link of defaultLinks) {
+    await SocialLink.findOneAndUpdate(
+      { platform: link.platform },
+      { $set: link },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+    n += 1;
+  }
+  console.log(`  · ${n} social links ensured`);
+}
+
 async function reset() {
-  const models = [Brand, BlogPost, Bundle, Category, HeroSlide, Product, Settings, User];
+  const models = [Brand, BlogPost, Bundle, Category, HeroSlide, Product, Settings, SocialLink, User];
   for (const M of models) {
     await M.deleteMany({});
   }
@@ -226,7 +247,7 @@ async function main() {
   await dbConn.connect();
 
   if (RESET) {
-    console.log('\n🧹 RESET');
+    console.log('\n* RESET');
     await reset();
   }
 
@@ -251,6 +272,9 @@ async function main() {
 
   console.log('\n🎬 Hero slides');
   await seedHeroSlides();
+
+  console.log('\n🔗 Social Links');
+  await seedSocialLinks();
 
   console.log('\n⚙️  Settings');
   await seedSettings();

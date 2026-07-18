@@ -17,6 +17,8 @@ module.exports = {
   RefreshToken: require('./RefreshToken'),
   Review: require('./Review'),
   Settings: require('./Settings'),
+  SocialLink: require('./SocialLink'),
+  Inquiry: require('./Inquiry'),
   User: require('./User'),
   Wishlist: require('./Wishlist'),
 };

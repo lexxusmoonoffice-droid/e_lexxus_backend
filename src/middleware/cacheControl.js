@@ -12,7 +12,7 @@ const env = require('../config/env');
 
 const cacheControl = (seconds = 60, { swr = seconds * 2, scope = 'public' } = {}) =>
   (req, res, next) => {
-    if (env.isTest) return next();
+    if (env.isTest || env.isDev) return next();
     res.setHeader(
       'Cache-Control',
       `${scope}, max-age=${seconds}, stale-while-revalidate=${swr}`,

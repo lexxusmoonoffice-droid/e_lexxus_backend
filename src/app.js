@@ -30,6 +30,7 @@ const bundleRoutes = require('./routes/bundles');
 const blogRoutes = require('./routes/blog');
 const heroSlideRoutes = require('./routes/heroSlides');
 const settingsRoutes = require('./routes/settings');
+const socialLinksRoutes = require('./routes/socialLinks');
 const searchRoutes = require('./routes/search');
 const currencyRoutes = require('./routes/currency');
 const cartRoutes = require('./routes/cart');
@@ -42,6 +43,7 @@ const notificationRoutes = require('./routes/notifications');
 const uploadRoutes = require('./routes/uploads');
 const paymentRoutes = require('./routes/payments');
 const zohoRoutes = require('./routes/zoho');
+const inquiriesRoutes = require('./routes/inquiries');
 const adminRoutes = require('./routes/admin');
 
 function buildApp() {
@@ -123,6 +125,7 @@ function buildApp() {
   app.use('/api/blog', blogRoutes);
   app.use('/api/hero-slides', heroSlideRoutes);
   app.use('/api/settings', settingsRoutes);
+  app.use('/api/social-links', socialLinksRoutes);
   app.use('/api/search', searchRoutes);
   app.use('/api/currency', currencyRoutes);
   app.use('/api/cart', cartRoutes);
@@ -136,6 +139,7 @@ function buildApp() {
   app.use('/api/payments', paymentRoutes);
   app.use('/api/zoho', zohoRoutes);
   app.use('/api/admin/integrations', require('./routes/integrations'));
+  app.use('/api/inquiries', inquiriesRoutes);
   app.use('/api/admin', adminRoutes);
   app.use('/api/docs', docsRoutes);
 

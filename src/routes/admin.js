@@ -14,7 +14,9 @@ const users = require('../controllers/admin/users.controller');
 const orders = require('../controllers/admin/orders.controller');
 const reviewsAdmin = require('../controllers/admin/reviews.controller');
 const settings = require('../controllers/admin/settings.controller');
+const socialLinks = require('../controllers/admin/socialLinks.controller');
 const auditCtrl = require('../controllers/admin/audit.controller');
+const inquiries = require('../controllers/admin/inquiries.controller');
 
 const router = express.Router();
 
@@ -95,6 +97,18 @@ router.delete('/reviews/:id', validate(v.idParam, 'params'), reviewsAdmin.remove
 /* Settings */
 router.get('/settings', settings.get);
 router.put('/settings', validate(v.settingsUpdate), settings.update);
+
+/* Inquiries */
+router.get('/inquiries', validate(v.listQuery, 'query'), inquiries.list);
+router.get('/inquiries/:id', validate(v.idParam, 'params'), inquiries.detail);
+router.patch('/inquiries/:id/status', validate(v.idParam, 'params'), inquiries.patchStatus);
+router.delete('/inquiries/:id', validate(v.idParam, 'params'), inquiries.remove);
+
+/* Social Links */
+router.get('/social-links', socialLinks.list);
+router.post('/social-links', validate(v.socialLinkCreate), socialLinks.create);
+router.put('/social-links/:id', validate(v.idParam, 'params'), validate(v.socialLinkUpdate), socialLinks.update);
+router.delete('/social-links/:id', validate(v.idParam, 'params'), socialLinks.remove);
 
 /* Audit log */
 router.get('/audit-log', auditCtrl.list);
