@@ -30,7 +30,7 @@ router.post('/send-otp', authLimiter, ctrl.sendOtp);
 router.post('/verify-otp', authLimiter, ctrl.verifyOtp);
 
 // Google OAuth — browser navigates directly to these (not XHR)
-router.get('/google', ctrl.googleRedirect);
-router.get('/google/callback', ctrl.googleCallback);
+router.get('/google', ctrl.googleAuthHandler);
+router.get('/google/callback', ctrl.googleAuthHandler);
 
 module.exports = router;

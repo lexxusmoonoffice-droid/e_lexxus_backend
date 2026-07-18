@@ -5,6 +5,13 @@ const { toSlug } = require('../utils/slug');
 
 const { Schema } = mongoose;
 
+const bannerSchema = new Schema({
+  img: { type: String, required: true },
+  title: { type: String, default: '' },
+  sub: { type: String, default: '' },
+  href: { type: String, default: '' },
+});
+
 const categorySchema = new Schema(
   {
     name: { type: String, required: true, trim: true },
@@ -14,6 +21,7 @@ const categorySchema = new Schema(
     order: { type: Number, default: 0 },
     productCount: { type: Number, default: 0, min: 0 },
     status: { type: String, enum: ['active', 'hidden'], default: 'active' },
+    banners: { type: [bannerSchema], default: [] },
   },
   { timestamps: true },
 );

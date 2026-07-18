@@ -19,11 +19,9 @@ const settingsSchema = new Schema(
       defaultProvider: { type: String, enum: ['zoho', 'stripe', 'razorpay'], default: 'zoho' },
     },
     social: {
-      twitter: String,
-      instagram: String,
-      youtube: String,
-      linkedin: String,
-      facebook: String,
+      type: Map,
+      of: String,
+      default: {},
     },
     seo: {
       siteTitle: String,
@@ -34,6 +32,20 @@ const settingsSchema = new Schema(
       privacyUrl: String,
       termsUrl: String,
       refundUrl: String,
+    },
+    contact: {
+      email: { type: String, default: 'hello@lexxus.com' },
+      phone: { type: String, default: '+1 (800) 123-4567' },
+      address: { type: String, default: '340 Pine Street, New York, NY 10001' },
+      hours: { type: String, default: 'Mon–Fri, 9am–6pm EST' },
+      locationLabel: { type: String, default: 'New York, NY' },
+      locationImage: { type: String, default: 'https://images.unsplash.com/photo-1477959858617-67f85cf4f1df?w=800&q=80' },
+      responseTimes: {
+        general: { type: String, default: '24–48 hrs' },
+        technical: { type: String, default: '24 hrs' },
+        billing: { type: String, default: '4–8 hrs' },
+        partnerships: { type: String, default: '2–3 days' },
+      },
     },
     integrations: {
       zoho: {

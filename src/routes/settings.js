@@ -27,6 +27,7 @@ router.get(
       social: s.social || {},
       seo: s.seo || {},
       legal: s.legal || {},
+      contact: s.contact || {},
     });
   }),
 );

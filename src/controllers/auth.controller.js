@@ -52,8 +52,8 @@ const refresh = asyncHandler(async (req, res) => {
 
 const logout = asyncHandler(async (req, res) => {
   // Revoke refresh token (DB)
-  const refresh = getRefreshFromRequest(req);
-  await authService.logout(refresh);
+  const refreshToken = getRefreshFromRequest(req);
+  await authService.logout(refreshToken);
   // Best-effort: blacklist the current access token's jti so it can't
   // be used during its 15-min life.
   const auth = req.headers.authorization || '';
@@ -145,6 +145,13 @@ const googleCallback = asyncHandler(async (req, res) => {
   }
 });
 
+const googleAuthHandler = asyncHandler(async (req, res) => {
+  if (req.query.code || req.query.error) {
+    return googleCallback(req, res);
+  }
+  return googleRedirect(req, res);
+});
+
 module.exports = {
   register,
   login,
@@ -158,6 +165,7 @@ module.exports = {
   changePassword,
   googleRedirect,
   googleCallback,
+  googleAuthHandler,
   sendOtp,
   verifyOtp,
 };

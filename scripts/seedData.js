@@ -5,8 +5,45 @@
  */
 
 const categories = [
-  { name: '3D Models', slug: 'models', subs: ['Furniture', 'Lighting', 'Decor', 'Kitchen'] },
-  { name: '3D Scenes', slug: 'scenes', subs: ['Interior', 'Exterior'] },
+  {
+    name: '3D Models',
+    slug: 'models',
+    subs: ['Furniture', 'Lighting', 'Decor', 'Kitchen'],
+    banners: [
+      {
+        img: 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?w=1800&q=90',
+        title: 'Premium 3D Models Collection',
+        sub: 'Production-ready furniture, lighting, and decor assets.',
+      },
+      {
+        img: 'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=1800&q=90',
+        title: 'Obsessive Detail & Fidelity',
+        sub: 'Hand-crafted assets with high resolution maps.',
+      },
+      {
+        img: 'https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=1800&q=90',
+        title: 'V-Ray & Corona Compatibility',
+        sub: 'Pre-configured shaders and materials for instant rendering.',
+      },
+    ],
+  },
+  {
+    name: '3D Scenes',
+    slug: 'scenes',
+    subs: ['Interior', 'Exterior'],
+    banners: [
+      {
+        img: 'https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?w=1800&q=90',
+        title: 'Complete 3D Scenes',
+        sub: 'Fully staged interior and exterior visualizer templates.',
+      },
+      {
+        img: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=1800&q=90',
+        title: 'Staged Lighting & Camera Setups',
+        sub: 'Learn industry lighting styles directly from original staging.',
+      },
+    ],
+  },
   { name: '3D Sets', slug: 'sets', subs: [] },
   { name: 'Textures', slug: 'textures', subs: ['Wood', 'Stone', 'Fabric'] },
   // Functional sub-cats used by products below

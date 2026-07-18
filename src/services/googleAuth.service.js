@@ -7,7 +7,7 @@ const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const GOOGLE_USERINFO_URL = 'https://www.googleapis.com/oauth2/v2/userinfo';
 
 function getCallbackUrl() {
-  return `${env.API_URL}/api/auth/google/callback`;
+  return `${env.API_URL}/api/auth/google`;
 }
 
 function buildRedirectUrl(next) {

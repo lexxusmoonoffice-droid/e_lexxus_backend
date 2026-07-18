@@ -81,7 +81,7 @@ async function buildFilter(query) {
   return filter;
 }
 
-const POPULATE = ['brand', 'category'];
+const POPULATE = ['brand', 'category', 'subCategory'];
 
 async function listProducts(query = {}) {
   return cache.wrap(

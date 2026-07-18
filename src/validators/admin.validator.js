@@ -10,7 +10,7 @@ const idParam = z.object({ id: objectId });
 const listQuery = z
   .object({
     page: z.coerce.number().int().min(1).default(1),
-    limit: z.coerce.number().int().min(1).max(200).default(20),
+    limit: z.coerce.number().int().min(1).max(20000).default(20),
     sort: z.string().optional(),
     status: z.string().optional(),
     q: z.string().trim().optional(),
@@ -88,7 +88,6 @@ const bundleCreate = z.object({
 });
 const bundleUpdate = bundleCreate.partial();
 
-/* ── Categories ─────────────────────────────────────────────── */
 const categoryUpsert = z.object({
   name: z.string().trim().min(1),
   slug: z.string().trim().optional(),
@@ -96,6 +95,16 @@ const categoryUpsert = z.object({
   image: z.string().nullable().optional(),
   order: z.coerce.number().int().optional(),
   status: z.enum(['active', 'hidden']).optional(),
+  banners: z
+    .array(
+      z.object({
+        img: z.string().min(1),
+        title: z.string().default(''),
+        sub: z.string().default(''),
+        href: z.string().optional(),
+      })
+    )
+    .optional(),
 });
 
 /* ── Brands ─────────────────────────────────────────────────── */
@@ -162,7 +171,7 @@ const orderRefund = z.object({ reason: z.string().max(500).optional() });
 const settingsUpdate = z
   .object({
     storeName: z.string().optional(),
-    supportEmail: z.string().email().optional(),
+    supportEmail: z.string().email().or(z.literal('')).optional(),
     defaultCurrency: z.string().optional(),
     payments: z
       .object({
@@ -171,15 +180,7 @@ const settingsUpdate = z
         paypalEnabled: z.coerce.boolean().optional(),
       })
       .optional(),
-    social: z
-      .object({
-        twitter: z.string().optional(),
-        instagram: z.string().optional(),
-        youtube: z.string().optional(),
-        linkedin: z.string().optional(),
-        facebook: z.string().optional(),
-      })
-      .optional(),
+    social: z.record(z.string()).optional(),
     seo: z
       .object({
         siteTitle: z.string().optional(),
@@ -194,8 +195,35 @@ const settingsUpdate = z
         refundUrl: z.string().optional(),
       })
       .optional(),
+    contact: z
+      .object({
+        email: z.string().email().or(z.literal('')).optional(),
+        phone: z.string().optional(),
+        address: z.string().optional(),
+        hours: z.string().optional(),
+        locationLabel: z.string().optional(),
+        locationImage: z.string().optional(),
+        responseTimes: z
+          .object({
+            general: z.string().optional(),
+            technical: z.string().optional(),
+            billing: z.string().optional(),
+            partnerships: z.string().optional(),
+          })
+          .optional(),
+      })
+      .optional(),
   })
   .passthrough();
+
+const socialLinkCreate = z.object({
+  platform: z.string().trim().min(1),
+  url: z.string().trim().url(),
+  active: z.coerce.boolean().optional(),
+  order: z.coerce.number().int().optional(),
+});
+
+const socialLinkUpdate = socialLinkCreate.partial();
 
 module.exports = {
   idParam,
@@ -215,4 +243,6 @@ module.exports = {
   orderStatusPatch,
   orderRefund,
   settingsUpdate,
+  socialLinkCreate,
+  socialLinkUpdate,
 };

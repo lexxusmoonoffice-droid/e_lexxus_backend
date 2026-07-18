@@ -46,12 +46,12 @@ async function addItem(userId, { productId, bundleId, qty }) {
   const id = productId || bundleId;
   const idx = findItemIndex(cart, type, id);
   if (idx >= 0) {
-    cart.items[idx].qty = Math.min(99, cart.items[idx].qty + qty);
+    cart.items[idx].qty = 1;
   } else {
     cart.items.push(
       type === 'product'
-        ? { product: id, qty }
-        : { bundle: id, qty },
+        ? { product: id, qty: 1 }
+        : { bundle: id, qty: 1 },
     );
   }
   await cart.save();
@@ -98,12 +98,12 @@ async function mergeCart(userId, items) {
     if (!exists) continue;
     const idx = findItemIndex(cart, type, id);
     if (idx >= 0) {
-      cart.items[idx].qty = Math.min(99, cart.items[idx].qty + (incoming.qty || 1));
+      cart.items[idx].qty = 1;
     } else {
       cart.items.push(
         type === 'product'
-          ? { product: id, qty: incoming.qty || 1 }
-          : { bundle: id, qty: incoming.qty || 1 },
+          ? { product: id, qty: 1 }
+          : { bundle: id, qty: 1 },
       );
     }
   }
